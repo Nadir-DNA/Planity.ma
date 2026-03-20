@@ -14,6 +14,22 @@
 
 ---
 
+## Cadre Réglementaire Marocain (transversal à toutes les versions)
+
+> À intégrer dès la conception, pas en fin de projet.
+
+| Domaine | Réglementation | Impact |
+|---------|---------------|--------|
+| **Paiement en ligne** | Agrément BAM requis pour détenir des fonds tiers (Loi 103-12) | Le flux d'argent va directement au pro via CMI — la plateforme ne détient pas de fonds |
+| **Passerelle carte** | CMI est l'opérateur national agréé (Visa/MC au Maroc) | Convention obligatoire avec banque acquéreuse marocaine |
+| **Stripe / PayPal** | Non agréés par BAM pour les marchands marocains | Interdit pour les encaissements de pros marocains |
+| **Données personnelles** | Loi 09-08 (CNDP → CNIE depuis 2022) | Déclaration/autorisation CNDP, hébergement données au Maroc recommandé |
+| **Facturation** | Code Général des Impôts marocain | Numérotation factures, TVA 20%, archivage 10 ans |
+| **Société** | Immatriculation SARL/SA au Maroc obligatoire | Nécessaire avant tout contrat CMI |
+| **Office des Changes** | Restrictions sur les flux financiers transfrontaliers | Limiter les dépendances à des processeurs étrangers |
+
+---
+
 ## V0 — MVP (Minimum Viable Product)
 
 > **Objectif :** Permettre à un professionnel de gérer ses réservations et d'être payé, et à un client de réserver en ligne en autonomie.
@@ -56,13 +72,21 @@
 - Annulation par le pro avec notification client
 
 ### 6. Paiement
-- Intégration CMI / PayZone / Stripe (selon disponibilité au Maroc)
-- Paiement en ligne complet à la réservation (optionnel selon le pro)
-- **Système d'acompte** : le pro définit un % ou montant fixe à payer à la réservation (ex. 30%), le solde en salon
-- Paiement en salon (cash ou TPE) — statut "payé" mis à jour manuellement
-- Reçus automatiques par email
+
+> **Contrainte réglementaire :** Stripe n'est pas disponible au Maroc. Tout prestataire de services de paiement doit être agréé par **Bank Al-Maghrib (BAM)**. La plateforme ne peut pas détenir de fonds pour le compte de tiers sans agrément d'établissement de paiement (Loi n°103-12).
+
+#### Architecture paiement v0 — approche réaliste
+- **Passerelle principale : CMI (Centre Monétique Interbancaire)**
+  - Contrat d'acceptation via une banque acquéreuse marocaine (Attijariwafa, CIH, BMCE/Bank of Africa, Banque Populaire)
+  - Acceptation Visa / Mastercard / CMI sur la page de réservation
+  - Tokenisation carte via l'API CMI (pour rappel d'acompte sans re-saisie)
+- **Paiement en salon** (cash, TPE physique) — statut mis à jour manuellement par le pro
+- **Portefeuilles mobiles** (lecture seule en v0, intégration active en v1) : Orange Money Maroc, Inwi Money
+- **Système d'acompte** : le pro configure un % ou montant fixe débité via CMI à la réservation, le solde réglé en salon
+- **Important — flux des fonds :** l'argent est collecté directement sur le compte bancaire CMI du pro (pas de fonds en transit sur la plateforme) → évite l'obligation d'agrément BAM établissement de paiement
+- Reçus automatiques par email (PDF)
 - Tableau de bord des encaissements (total jour / semaine / mois)
-- Remboursement partiel ou total en cas d'annulation (selon politique du pro)
+- Remboursement via CMI (API de remboursement CMI) selon politique du pro
 
 ### 7. CRM de Base
 - Liste clients avec fiche individuelle (nom, téléphone, email, historique RDV)
@@ -94,11 +118,13 @@
 - **Backend :** API Routes Next.js + Node.js
 - **Base de données :** PostgreSQL (Prisma ORM)
 - **Auth :** NextAuth.js
-- **Paiement :** Stripe (+ CMI en intégration secondaire)
-- **SMS :** Twilio / TextBelt Maroc
+- **Paiement :** CMI (via banque acquéreuse marocaine — Attijariwafa / CIH / BMCE / BP)
+- **SMS :** Avito SMS / Mobily / solution opérateur local (Twilio ne couvre pas bien le Maroc en SMS local)
 - **Email :** Resend / SendGrid
-- **Hébergement :** Vercel + Railway (DB)
+- **Hébergement :** Vercel + Railway (DB) — ou hébergement local (OVH Maroc, Ozone.ma) selon contraintes données
 - **Stockage :** Cloudinary (photos)
+
+> **Note réglementaire :** Avant tout traitement de paiement, la société doit être immatriculée au Maroc (SARL/SA) et signer une convention de télépaiement avec une banque acquéreuse affiliée CMI. Prévoir 4 à 8 semaines de délai administratif.
 
 ---
 
@@ -107,12 +133,18 @@
 > **Objectif :** Augmenter la rétention des pros, booster la visibilité clients et introduire la monétisation SaaS.
 
 ### 1. Plans d'abonnement & Monétisation
+
+> **Contrainte :** Sans Stripe Billing disponible au Maroc, la facturation récurrente doit être gérée manuellement ou via un partenariat bancaire. Deux approches :
+> - **Prélèvement automatique CMI** (tokenisation carte, débit mensuel via API CMI)
+> - **Virement bancaire manuel** avec relance automatique par email (plus simple pour démarrer)
+
 - Freemium (1 utilisateur, max 50 RDV/mois, page basique)
 - Plan Starter (fonctionnalités v0 complètes)
 - Plan Pro (multi-staff, analytics avancés, priorité listing)
 - Plan Business (multi-sites, API, white-label partiel)
 - Gestion des abonnements (upgrade, downgrade, annulation)
-- Facturation automatique mensuelle/annuelle
+- Facturation mensuelle/annuelle : débit CMI ou virement + facture PDF automatique
+- Numéros de facture conformes à la législation marocaine (DGI)
 
 ### 2. Multi-Staff (Équipe)
 - Ajout de collaborateurs (coiffeurs, esthéticiennes…) au sein d'un salon
@@ -209,12 +241,17 @@
 - Tarification et équipes par site
 
 ### 5. Finance & Paiements Avancés
-- **Wallet pro :** solde des acomptes, virement vers compte bancaire (payout)
-- Paiement fractionné client (Buy Now Pay Later via partenaire)
-- Facturation automatique avec numéro de facture légal marocain
-- Intégration Wafacash / CIH Money / Orange Money
-- Rapports financiers avancés (P&L mensuel, prévisions)
-- Gestion TVA automatisée
+
+> **Contrainte BAM :** Pour détenir et redistribuer des fonds (modèle marketplace), la plateforme devra obtenir l'**agrément d'établissement de paiement** auprès de Bank Al-Maghrib (Loi 103-12 relative aux établissements de crédit). Ce processus est long et coûteux → à prévoir juridiquement en amont de la v2.
+
+- **Wallet pro virtuel :** tableau de suivi des encaissements et acomptes (comptabilité, pas détention de fonds réels)
+- **Payout via virement bancaire** : le pro renseigne son RIB, la plateforme initie des virements via API bancaire partenaire (Bank of Africa, CIH Bank Open Banking)
+- **Paiement fractionné client** : partenariat avec **Hmizate / Cashplus BNPL** ou solution locale
+- **Mobile money :** Orange Money Maroc, Inwi Money, Wafacash (API officielle partenaire)
+- **CIH Pay / Barid Bank** comme alternative CMI pour les clients sans CB
+- Facturation automatique avec numérotation légale marocaine (conformité DGI)
+- Rapports financiers avancés (P&L mensuel, prévisions CA)
+- **Gestion TVA 20%** automatisée (services soumis à TVA au Maroc)
 
 ### 6. Packages & Abonnements Clients
 - **Packs de séances :** ex. "10 épilations = 8 payées"
