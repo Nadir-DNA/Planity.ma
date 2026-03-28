@@ -1,0 +1,93 @@
+{
+  "app": {
+    "name": "Planity.ma",
+    "description": "Reservez votre prochain rendez-vous beaute en ligne"
+  },
+  "nav": {
+    "home": "Accueil",
+    "search": "Rechercher",
+    "appointments": "Mes rendez-vous",
+    "favorites": "Favoris",
+    "login": "Connexion",
+    "register": "Inscription",
+    "logout": "Deconnexion",
+    "pro": "Espace Pro"
+  },
+  "hero": {
+    "title": "Reservez votre prochain rendez-vous beaute",
+    "subtitle": "Trouvez les meilleurs salons de coiffure, barbiers, instituts de beaute et spas pres de chez vous au Maroc.",
+    "search_placeholder": "Coiffeur, barbier, spa...",
+    "all_cities": "Toutes les villes",
+    "search": "Rechercher"
+  },
+  "categories": {
+    "title": "Explorez par categorie",
+    "subtitle": "Trouvez le service parfait pour vous"
+  },
+  "booking": {
+    "book": "Reserver",
+    "select_service": "Choisissez vos services",
+    "select_staff": "Choisissez votre professionnel",
+    "select_datetime": "Choisissez la date et l'heure",
+    "confirmation": "Confirmation",
+    "no_preference": "Pas de preference",
+    "first_available": "Premier disponible",
+    "confirm": "Confirmer la reservation",
+    "total": "Total",
+    "duration": "Duree"
+  },
+  "salon": {
+    "services": "Services",
+    "team": "L'equipe",
+    "reviews": "Avis clients",
+    "hours": "Horaires",
+    "book_appointment": "Prendre rendez-vous",
+    "closed": "Ferme"
+  },
+  "auth": {
+    "login_title": "Connexion",
+    "login_subtitle": "Connectez-vous a votre compte",
+    "register_title": "Creer un compte",
+    "register_subtitle": "Rejoignez Planity.ma et reservez en ligne",
+    "email": "Email",
+    "password": "Mot de passe",
+    "first_name": "Prenom",
+    "last_name": "Nom",
+    "phone": "Telephone",
+    "remember_me": "Se souvenir de moi",
+    "forgot_password": "Mot de passe oublie ?",
+    "no_account": "Pas encore de compte ?",
+    "has_account": "Deja un compte ?",
+    "continue_google": "Continuer avec Google"
+  },
+  "pro": {
+    "agenda": "Agenda",
+    "clients": "Clients",
+    "services": "Services",
+    "team": "Equipe",
+    "pos": "Caisse",
+    "stock": "Stock",
+    "stats": "Statistiques",
+    "settings": "Parametres",
+    "today": "Aujourd'hui",
+    "day_view": "Jour",
+    "week_view": "Semaine",
+    "new_appointment": "Nouveau RDV"
+  },
+  "common": {
+    "from": "A partir de",
+    "dh": "DH",
+    "min": "min",
+    "today": "Aujourd'hui",
+    "tomorrow": "Demain",
+    "next": "Suivant",
+    "back": "Retour",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "add": "Ajouter",
+    "see_all": "Voir tout",
+    "loading": "Chargement..."
+  }
+}
