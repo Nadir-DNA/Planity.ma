@@ -1,186 +1,372 @@
 import { PrismaClient } from "@prisma/client";
+import * as bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-const categories = [
-  { name: "Coupe", nameAr: "قص", slug: "coupe", icon: "scissors", order: 1 },
-  { name: "Coloration", nameAr: "صباغة", slug: "coloration", icon: "palette", order: 2 },
-  { name: "Soins capillaires", nameAr: "عناية بالشعر", slug: "soins-capillaires", icon: "sparkles", order: 3 },
-  { name: "Coiffure", nameAr: "تسريحات", slug: "coiffure", icon: "crown", order: 4 },
-  { name: "Barbe", nameAr: "لحية", slug: "barbe", icon: "scissors", order: 5 },
-  { name: "Manucure", nameAr: "مانيكير", slug: "manucure", icon: "hand", order: 6 },
-  { name: "Pedicure", nameAr: "باديكير", slug: "pedicure", icon: "footprints", order: 7 },
-  { name: "Epilation", nameAr: "إزالة الشعر", slug: "epilation", icon: "zap", order: 8 },
-  { name: "Maquillage", nameAr: "مكياج", slug: "maquillage", icon: "palette", order: 9 },
-  { name: "Massage", nameAr: "تدليك", slug: "massage", icon: "heart", order: 10 },
-  { name: "Hammam", nameAr: "حمام", slug: "hammam", icon: "droplets", order: 11 },
-  { name: "Soin visage", nameAr: "عناية بالوجه", slug: "soin-visage", icon: "sparkles", order: 12 },
-];
-
 async function main() {
-  console.log("Seeding database...");
+  console.log("🌱 Starting database seed...");
 
-  // Create service categories
-  for (const cat of categories) {
-    await prisma.serviceCategory.upsert({
-      where: { slug: cat.slug },
-      update: {},
-      create: cat,
-    });
-  }
+  // Clean existing data
+  await prisma.bookingItem.deleteMany();
+  await prisma.booking.deleteMany();
+  await prisma.review.deleteMany();
+  await prisma.staffService.deleteMany();
+  await prisma.staffSchedule.deleteMany();
+  await prisma.staffMember.deleteMany();
+  await prisma.service.deleteMany();
+  await prisma.openingHours.deleteMany();
+  await prisma.salon.deleteMany();
+  await prisma.user.deleteMany();
 
-  console.log(`Created ${categories.length} service categories`);
+  console.log("🧹 Cleaned existing data");
 
-  // Create admin user
-  const admin = await prisma.user.upsert({
-    where: { email: "admin@planity.ma" },
-    update: {},
-    create: {
+  // Create users
+  const passwordHash = await bcrypt.hash("password123", 12);
+
+  const adminUser = await prisma.user.create({
+    data: {
       email: "admin@planity.ma",
       name: "Admin Planity",
-      firstName: "Admin",
-      lastName: "Planity",
+      passwordHash,
       role: "ADMIN",
-      passwordHash: "$2a$12$LQv3c1yqBo9SkvXS7QTJPOoZdyGZ0bOmFkFSJj5fR3SjG5OJBjMi", // "admin123"
     },
   });
 
-  console.log("Created admin user:", admin.email);
-
-  // Create sample salon owner
-  const owner = await prisma.user.upsert({
-    where: { email: "pro@salon-elegance.ma" },
-    update: {},
-    create: {
-      email: "pro@salon-elegance.ma",
+  const proUser1 = await prisma.user.create({
+    data: {
+      email: "sara@salon-elegance.ma",
       name: "Sara Mansouri",
-      firstName: "Sara",
-      lastName: "Mansouri",
-      phone: "+212661123456",
+      passwordHash,
       role: "PRO_OWNER",
-      passwordHash: "$2a$12$LQv3c1yqBo9SkvXS7QTJPOoZdyGZ0bOmFkFSJj5fR3SjG5OJBjMi", // "admin123"
+      phone: "+212 661 123 456",
     },
   });
 
-  // Create sample salon
-  const salon = await prisma.salon.upsert({
-    where: { slug: "salon-elegance-casablanca" },
-    update: {},
-    create: {
+  const proUser2 = await prisma.user.create({
+    data: {
+      email: "karim@barber-house.ma",
+      name: "Karim Bennani",
+      passwordHash,
+      role: "PRO_OWNER",
+      phone: "+212 662 789 012",
+    },
+  });
+
+  const consumerUser1 = await prisma.user.create({
+    data: {
+      email: "fatima@email.com",
+      name: "Fatima Zahra",
+      passwordHash,
+      role: "CONSUMER",
+      phone: "+212 663 345 678",
+    },
+  });
+
+  const consumerUser2 = await prisma.user.create({
+    data: {
+      email: "ahmed@email.com",
+      name: "Ahmed Benali",
+      passwordHash,
+      role: "CONSUMER",
+      phone: "+212 664 901 234",
+    },
+  });
+
+  console.log("👥 Created users");
+
+  // Create salons
+  const salon1 = await prisma.salon.create({
+    data: {
       name: "Salon Elegance",
       slug: "salon-elegance-casablanca",
-      description:
-        "Salon de coiffure haut de gamme au coeur de Casablanca. Notre equipe de professionnels vous accueille dans un cadre chaleureux.",
       category: "COIFFEUR",
       address: "123 Boulevard Mohammed V",
       city: "Casablanca",
-      postalCode: "20000",
-      latitude: 33.5731,
-      longitude: -7.5898,
-      phone: "+212522123456",
+      phone: "+212 522 123 456",
       email: "contact@salon-elegance.ma",
+      description: "Salon de coiffure haut de gamme au coeur de Casablanca",
+      ownerId: proUser1.id,
       isActive: true,
       isVerified: true,
-      ownerId: owner.id,
+      averageRating: 4.8,
+      reviewCount: 124,
     },
   });
 
-  // Opening hours (Mon-Sat 9-19, Sun closed)
-  for (let day = 0; day < 7; day++) {
-    await prisma.openingHours.upsert({
-      where: { salonId_dayOfWeek: { salonId: salon.id, dayOfWeek: day } },
-      update: {},
-      create: {
-        salonId: salon.id,
-        dayOfWeek: day,
-        openTime: "09:00",
-        closeTime: day === 5 ? "20:00" : "19:00",
-        isClosed: day === 6,
-      },
-    });
-  }
-
-  // Services
-  const coupeCategory = await prisma.serviceCategory.findUnique({
-    where: { slug: "coupe" },
-  });
-  const colorCategory = await prisma.serviceCategory.findUnique({
-    where: { slug: "coloration" },
-  });
-  const soinCategory = await prisma.serviceCategory.findUnique({
-    where: { slug: "soins-capillaires" },
-  });
-
-  const servicesData = [
-    { name: "Coupe femme", price: 150, duration: 45, categoryId: coupeCategory?.id },
-    { name: "Coupe homme", price: 80, duration: 30, categoryId: coupeCategory?.id },
-    { name: "Coupe enfant", price: 60, duration: 20, categoryId: coupeCategory?.id },
-    { name: "Coloration complete", price: 300, duration: 90, categoryId: colorCategory?.id },
-    { name: "Meches", price: 250, duration: 120, categoryId: colorCategory?.id },
-    { name: "Balayage", price: 350, duration: 150, categoryId: colorCategory?.id },
-    { name: "Brushing", price: 100, duration: 30, categoryId: soinCategory?.id },
-    { name: "Soin capillaire", price: 200, duration: 60, categoryId: soinCategory?.id },
-  ];
-
-  for (const svc of servicesData) {
-    await prisma.service.create({
-      data: {
-        salonId: salon.id,
-        ...svc,
-      },
-    });
-  }
-
-  // Staff members
-  const staffData = [
-    { displayName: "Sara M.", title: "Coiffeuse senior", color: "#EC4899" },
-    { displayName: "Karim B.", title: "Coloriste", color: "#3B82F6" },
-    { displayName: "Nadia L.", title: "Coiffeuse", color: "#10B981" },
-  ];
-
-  for (const staff of staffData) {
-    const created = await prisma.staffMember.create({
-      data: {
-        salonId: salon.id,
-        ...staff,
-      },
-    });
-
-    // Set schedule (Mon-Sat 9-19)
-    for (let day = 0; day < 6; day++) {
-      await prisma.staffSchedule.create({
-        data: {
-          staffId: created.id,
-          dayOfWeek: day,
-          startTime: "09:00",
-          endTime: "19:00",
-          isWorking: true,
-        },
-      });
-    }
-  }
-
-  // Create sample consumer
-  await prisma.user.upsert({
-    where: { email: "client@example.com" },
-    update: {},
-    create: {
-      email: "client@example.com",
-      name: "Fatima Zahri",
-      firstName: "Fatima",
-      lastName: "Zahri",
-      phone: "+212662789012",
-      role: "CONSUMER",
-      passwordHash: "$2a$12$LQv3c1yqBo9SkvXS7QTJPOoZdyGZ0bOmFkFSJj5fR3SjG5OJBjMi",
+  const salon2 = await prisma.salon.create({
+    data: {
+      name: "Barber House",
+      slug: "barber-house-rabat",
+      category: "BARBIER",
+      address: "45 Rue Hassan II",
+      city: "Rabat",
+      phone: "+212 537 789 012",
+      email: "contact@barber-house.ma",
+      description: "Barbier professionnel à Rabat",
+      ownerId: proUser2.id,
+      isActive: true,
+      isVerified: true,
+      averageRating: 4.9,
+      reviewCount: 89,
     },
   });
 
-  console.log("Seed completed successfully!");
+  console.log("🏢 Created salons");
+
+  // Create opening hours
+  await prisma.openingHours.createMany({
+    data: [
+      // Salon 1
+      { salonId: salon1.id, dayOfWeek: 0, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon1.id, dayOfWeek: 1, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon1.id, dayOfWeek: 2, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon1.id, dayOfWeek: 3, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon1.id, dayOfWeek: 4, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon1.id, dayOfWeek: 5, openTime: "09:00", closeTime: "20:00", isClosed: false },
+      // Salon 2
+      { salonId: salon2.id, dayOfWeek: 0, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon2.id, dayOfWeek: 1, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon2.id, dayOfWeek: 2, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon2.id, dayOfWeek: 3, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon2.id, dayOfWeek: 4, openTime: "09:00", closeTime: "19:00", isClosed: false },
+      { salonId: salon2.id, dayOfWeek: 5, openTime: "09:00", closeTime: "20:00", isClosed: false },
+    ],
+  });
+
+  console.log("🕐 Created opening hours");
+
+  // Create services
+  const service1 = await prisma.service.create({
+    data: {
+      salonId: salon1.id,
+      name: "Coupe femme",
+      price: 150,
+      duration: 45,
+      description: "Coupe et coiffure pour femme",
+      isActive: true,
+      isOnlineBookable: true,
+    },
+  });
+
+  const service2 = await prisma.service.create({
+    data: {
+      salonId: salon1.id,
+      name: "Coloration",
+      price: 300,
+      duration: 90,
+      description: "Coloration complète ou mèches",
+      isActive: true,
+      isOnlineBookable: true,
+    },
+  });
+
+  const service3 = await prisma.service.create({
+    data: {
+      salonId: salon1.id,
+      name: "Brushing",
+      price: 100,
+      duration: 30,
+      description: "Brushing et coiffage",
+      isActive: true,
+      isOnlineBookable: true,
+    },
+  });
+
+  const service4 = await prisma.service.create({
+    data: {
+      salonId: salon2.id,
+      name: "Coupe homme",
+      price: 80,
+      duration: 30,
+      description: "Coupe classique ou moderne",
+      isActive: true,
+      isOnlineBookable: true,
+    },
+  });
+
+  const service5 = await prisma.service.create({
+    data: {
+      salonId: salon2.id,
+      name: "Barbe",
+      price: 50,
+      duration: 20,
+      description: "Taille et soin de la barbe",
+      isActive: true,
+      isOnlineBookable: true,
+    },
+  });
+
+  console.log("✂️ Created services");
+
+  // Create staff members
+  const staff1 = await prisma.staffMember.create({
+    data: {
+      salonId: salon1.id,
+      displayName: "Sara M.",
+      title: "Coiffeuse senior",
+      color: "#3B82F6",
+      isActive: true,
+    },
+  });
+
+  const staff2 = await prisma.staffMember.create({
+    data: {
+      salonId: salon1.id,
+      displayName: "Karim B.",
+      title: "Coloriste",
+      color: "#10B981",
+      isActive: true,
+    },
+  });
+
+  const staff3 = await prisma.staffMember.create({
+    data: {
+      salonId: salon2.id,
+      displayName: "Karim B.",
+      title: "Barbier",
+      color: "#F59E0B",
+      isActive: true,
+    },
+  });
+
+  console.log("👥 Created staff members");
+
+  // Create staff schedules
+  for (let i = 0; i < 6; i++) {
+    await prisma.staffSchedule.create({
+      data: {
+        staffId: staff1.id,
+        dayOfWeek: i,
+        startTime: "09:00",
+        endTime: "19:00",
+        isWorking: true,
+      },
+    });
+    await prisma.staffSchedule.create({
+      data: {
+        staffId: staff2.id,
+        dayOfWeek: i,
+        startTime: "09:00",
+        endTime: "19:00",
+        isWorking: true,
+      },
+    });
+    await prisma.staffSchedule.create({
+      data: {
+        staffId: staff3.id,
+        dayOfWeek: i,
+        startTime: "09:00",
+        endTime: "19:00",
+        isWorking: true,
+      },
+    });
+  }
+
+  console.log("📅 Created staff schedules");
+
+  // Assign staff to services
+  await prisma.staffService.createMany({
+    data: [
+      { staffId: staff1.id, serviceId: service1.id },
+      { staffId: staff1.id, serviceId: service2.id },
+      { staffId: staff1.id, serviceId: service3.id },
+      { staffId: staff2.id, serviceId: service2.id },
+      { staffId: staff3.id, serviceId: service4.id },
+      { staffId: staff3.id, serviceId: service5.id },
+    ],
+  });
+
+  console.log("🔗 Assigned staff to services");
+
+  // Create bookings
+  const booking1 = await prisma.booking.create({
+    data: {
+      reference: "PLM-A3K7N",
+      userId: consumerUser1.id,
+      salonId: salon1.id,
+      status: "CONFIRMED",
+      startTime: new Date("2024-03-20T14:00:00"),
+      endTime: new Date("2024-03-20T15:15:00"),
+      totalPrice: 250,
+      source: "ONLINE",
+      items: {
+        create: [
+          {
+            serviceId: service1.id,
+            staffId: staff1.id,
+            startTime: new Date("2024-03-20T14:00:00"),
+            endTime: new Date("2024-03-20T14:45:00"),
+            price: 150,
+          },
+          {
+            serviceId: service3.id,
+            staffId: staff1.id,
+            startTime: new Date("2024-03-20T14:45:00"),
+            endTime: new Date("2024-03-20T15:15:00"),
+            price: 100,
+          },
+        ],
+      },
+    },
+  });
+
+  const booking2 = await prisma.booking.create({
+    data: {
+      reference: "PLM-B8M2P",
+      userId: consumerUser2.id,
+      salonId: salon2.id,
+      status: "COMPLETED",
+      startTime: new Date("2024-03-15T10:00:00"),
+      endTime: new Date("2024-03-15T10:50:00"),
+      totalPrice: 130,
+      source: "ONLINE",
+      items: {
+        create: [
+          {
+            serviceId: service4.id,
+            staffId: staff3.id,
+            startTime: new Date("2024-03-15T10:00:00"),
+            endTime: new Date("2024-03-15T10:30:00"),
+            price: 80,
+          },
+          {
+            serviceId: service5.id,
+            staffId: staff3.id,
+            startTime: new Date("2024-03-15T10:30:00"),
+            endTime: new Date("2024-03-15T10:50:00"),
+            price: 50,
+          },
+        ],
+      },
+    },
+  });
+
+  console.log("📅 Created bookings");
+
+  // Create reviews
+  await prisma.review.create({
+    data: {
+      bookingId: booking2.id,
+      userId: consumerUser2.id,
+      salonId: salon2.id,
+      overallRating: 5,
+      qualityRating: 5,
+      timingRating: 5,
+      receptionRating: 5,
+      hygieneRating: 4,
+      comment: "Excellent service ! Karim est un vrai professionnel.",
+      status: "APPROVED",
+    },
+  });
+
+  console.log("⭐ Created reviews");
+
+  console.log("✅ Database seed completed successfully!");
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error("❌ Seed error:", e);
     process.exit(1);
   })
   .finally(async () => {
