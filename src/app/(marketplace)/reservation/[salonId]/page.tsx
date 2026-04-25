@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -10,35 +12,132 @@ import {
   Clock,
   User,
   CreditCard,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 const STEPS = ["Service", "Professionnel", "Date & Heure", "Confirmation"];
 
-// Placeholder data
-const services = [
-  { id: "s1", name: "Coupe femme", price: 150, duration: 45 },
-  { id: "s2", name: "Coupe homme", price: 80, duration: 30 },
-  { id: "s3", name: "Coloration", price: 300, duration: 90 },
-  { id: "s4", name: "Brushing", price: 100, duration: 30 },
-];
+interface Service {
+  id: string;
+  name: string;
+  price: number;
+  duration: number;
+  description?: string;
+}
 
-const staff = [
-  { id: "t1", name: "Sara M.", title: "Coiffeuse senior" },
-  { id: "t2", name: "Karim B.", title: "Coloriste" },
-  { id: "t3", name: "Nadia L.", title: "Coiffeuse" },
-];
+interface Staff {
+  id: string;
+  displayName: string;
+  title?: string;
+  color: string;
+  avatar?: string;
+}
 
-const timeSlots = [
-  "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
-  "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00",
-];
+interface AvailabilitySlot {
+  staffId: string;
+  staffName: string;
+  staffColor: string;
+  slots: { start: string; end: string }[];
+}
+
+interface AvailabilityResult {
+  date: string;
+  salonId: string;
+  availability: AvailabilitySlot[];
+}
 
 export default function BookingPage() {
+  const params = useParams();
+  const router = useRouter();
+  const { data: session, status } = useSession();
+  const salonId = params?.salonId as string;
+
   const [step, setStep] = useState(0);
+  const [services, setServices] = useState<Service[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Selection state
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [selectedEnd, setSelectedEnd] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+
+  // Availability state
+  const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+
+  // Fetch salon services and staff
+  useEffect(() => {
+    if (!salonId) return;
+
+    async function fetchData() {
+      try {
+        setLoading(true);
+        // Fetch salon details (includes services)
+        const salonRes = await fetch(`/api/v1/salons/${salonId}`);
+        if (!salonRes.ok) {
+          throw new Error("Impossible de charger les données du salon");
+        }
+        const salonData = await salonRes.json();
+
+        // Fetch staff separately
+        const staffRes = await fetch(`/api/v1/salons/${salonId}/staff`);
+        if (!staffRes.ok) {
+          throw new Error("Impossible de charger l'équipe");
+        }
+        const staffData = await staffRes.json();
+
+        setServices(salonData.salon?.services || []);
+        setStaff(staffData.staff || []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erreur de chargement");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [salonId]);
+
+  // Fetch availability when date changes
+  const fetchAvailability = useCallback(async (date: string) => {
+    if (!date || !salonId) return;
+
+    try {
+      setAvailabilityLoading(true);
+      const serviceId = selectedServices.length === 1 ? selectedServices[0] : undefined;
+      const staffId = selectedStaff || undefined;
+
+      const queryParams = new URLSearchParams({
+        salonId,
+        date,
+        ...(serviceId && { serviceId }),
+        ...(staffId && { staffId }),
+      });
+
+      const res = await fetch(`/api/v1/availability?${queryParams}`);
+      if (!res.ok) throw new Error("Erreur chargement disponibilités");
+
+      const data = await res.json();
+      setAvailability(data);
+    } catch (err) {
+      console.error("Availability fetch error:", err);
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  }, [salonId, selectedServices, selectedStaff]);
+
+  useEffect(() => {
+    if (selectedDate && step >= 2) {
+      fetchAvailability(selectedDate);
+    }
+  }, [selectedDate, step, fetchAvailability]);
 
   const totalPrice = services
     .filter((s) => selectedServices.includes(s.id))
@@ -51,6 +150,82 @@ export default function BookingPage() {
   function toggleService(id: string) {
     setSelectedServices((prev) =>
       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+    // Reset availability when services change
+    setAvailability(null);
+    setSelectedTime(null);
+  }
+
+  async function submitBooking() {
+    if (!session?.user) {
+      router.push(`/connexion?callbackUrl=/reservation/${salonId}`);
+      return;
+    }
+
+    if (!selectedDate || !selectedTime || selectedServices.length === 0) {
+      toast.error("Veuillez remplir tous les champs");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const bookingData = {
+        salonId,
+        userId: (session.user as any).id,
+        services: selectedServices.map((serviceId) => ({
+          serviceId,
+          staffId: selectedStaff || (staff[0]?.id ?? undefined),
+        })),
+        date: selectedDate,
+        time: selectedTime,
+        notes: notes || undefined,
+      };
+
+      const res = await fetch("/api/v1/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bookingData),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erreur lors de la réservation");
+      }
+
+      const { booking } = await res.json();
+      toast.success(`Réservation confirmée ! Référence: ${booking.reference}`);
+      router.push(`/mes-rendez-vous`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de la réservation");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading && step === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-rose-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <Card className="border-red-200">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              <p>{error}</p>
+            </div>
+            <Button variant="outline" className="mt-4" onClick={() => router.back()}>
+              Retour
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -98,33 +273,42 @@ export default function BookingPage() {
             <CardTitle>Choisissez vos services</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {services.map((service) => (
-                <button
-                  key={service.id}
-                  onClick={() => toggleService(service.id)}
-                  className={`w-full flex items-center justify-between p-4 rounded-lg border-2 transition-colors ${
-                    selectedServices.includes(service.id)
-                      ? "border-rose-500 bg-rose-50"
-                      : "border-gray-200 hover:border-gray-300"
-                  }`}
-                >
-                  <div className="text-left">
-                    <p className="font-medium text-gray-900">{service.name}</p>
-                    <p className="text-sm text-gray-500">
-                      <Clock className="inline h-3.5 w-3.5 mr-1" />
-                      {service.duration} min
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <span className="font-semibold">{service.price} DH</span>
-                    {selectedServices.includes(service.id) && (
-                      <Check className="h-5 w-5 text-rose-600" />
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
+            {services.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">
+                Aucun service disponible pour ce salon.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {services.map((service) => (
+                  <button
+                    key={service.id}
+                    onClick={() => toggleService(service.id)}
+                    className={`w-full flex items-center justify-between p-4 rounded-lg border-2 transition-colors ${
+                      selectedServices.includes(service.id)
+                        ? "border-rose-500 bg-rose-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="text-left">
+                      <p className="font-medium text-gray-900">{service.name}</p>
+                      {service.description && (
+                        <p className="text-sm text-gray-500 mt-1">{service.description}</p>
+                      )}
+                      <p className="text-sm text-gray-500">
+                        <Clock className="inline h-3.5 w-3.5 mr-1" />
+                        {service.duration} min
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <span className="font-semibold">{service.price} DH</span>
+                      {selectedServices.includes(service.id) && (
+                        <Check className="h-5 w-5 text-rose-600" />
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -138,7 +322,7 @@ export default function BookingPage() {
           <CardContent>
             <div className="space-y-3">
               <button
-                onClick={() => setSelectedStaff(null)}
+                onClick={() => { setSelectedStaff(null); setAvailability(null); setSelectedTime(null); }}
                 className={`w-full flex items-center p-4 rounded-lg border-2 transition-colors ${
                   selectedStaff === null
                     ? "border-rose-500 bg-rose-50"
@@ -147,26 +331,31 @@ export default function BookingPage() {
               >
                 <User className="h-10 w-10 text-gray-400 mr-3" />
                 <div className="text-left">
-                  <p className="font-medium text-gray-900">Pas de preference</p>
+                  <p className="font-medium text-gray-900">Pas de préférence</p>
                   <p className="text-sm text-gray-500">Premier disponible</p>
                 </div>
               </button>
               {staff.map((member) => (
                 <button
                   key={member.id}
-                  onClick={() => setSelectedStaff(member.id)}
+                  onClick={() => { setSelectedStaff(member.id); setAvailability(null); setSelectedTime(null); }}
                   className={`w-full flex items-center p-4 rounded-lg border-2 transition-colors ${
                     selectedStaff === member.id
                       ? "border-rose-500 bg-rose-50"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
                 >
-                  <div className="h-10 w-10 rounded-full bg-rose-200 flex items-center justify-center text-rose-700 font-bold mr-3">
-                    {member.name[0]}
+                  <div
+                    className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold mr-3"
+                    style={{ backgroundColor: member.color }}
+                  >
+                    {member.displayName[0]}
                   </div>
                   <div className="text-left">
-                    <p className="font-medium text-gray-900">{member.name}</p>
-                    <p className="text-sm text-gray-500">{member.title}</p>
+                    <p className="font-medium text-gray-900">{member.displayName}</p>
+                    {member.title && (
+                      <p className="text-sm text-gray-500">{member.title}</p>
+                    )}
                   </div>
                 </button>
               ))}
@@ -190,31 +379,59 @@ export default function BookingPage() {
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    setSelectedTime(null);
+                    setSelectedEnd(null);
+                  }}
                   min={new Date().toISOString().split("T")[0]}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
               </div>
+
               {selectedDate && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Creneaux disponibles
+                    Créneaux disponibles
                   </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {timeSlots.map((time) => (
-                      <button
-                        key={time}
-                        onClick={() => setSelectedTime(time)}
-                        className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                          selectedTime === time
-                            ? "bg-rose-600 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
-                      >
-                        {time}
-                      </button>
-                    ))}
-                  </div>
+                  {availabilityLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-rose-600" />
+                    </div>
+                  ) : availability?.availability && availability.availability.length > 0 ? (
+                    <div className="space-y-4">
+                      {availability.availability.map((staffAvail) => (
+                        <div key={staffAvail.staffId}>
+                          <p className="text-sm font-medium text-gray-700 mb-2">
+                            {staffAvail.staffName}
+                          </p>
+                          <div className="grid grid-cols-4 gap-2">
+                            {staffAvail.slots.map((slot) => (
+                              <button
+                                key={slot.start}
+                                onClick={() => {
+                                  setSelectedTime(slot.start);
+                                  setSelectedEnd(slot.end);
+                                }}
+                                className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                                  selectedTime === slot.start
+                                    ? "bg-rose-600 text-white"
+                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                }`}
+                              >
+                                {slot.start}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>Aucun créneau disponible pour cette date.</p>
+                      <p className="text-sm mt-1">Essayez une autre date ou un autre professionnel.</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -226,7 +443,7 @@ export default function BookingPage() {
       {step === 3 && (
         <Card>
           <CardHeader>
-            <CardTitle>Confirmation</CardTitle>
+            <CardTitle>Récapitulatif</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -237,7 +454,7 @@ export default function BookingPage() {
                     .filter((s) => selectedServices.includes(s.id))
                     .map((s) => (
                       <p key={s.id} className="text-sm">
-                        {s.name}
+                        {s.name} — {s.price} DH
                       </p>
                     ))}
                 </div>
@@ -246,28 +463,57 @@ export default function BookingPage() {
                 <span className="text-gray-500">Professionnel</span>
                 <span>
                   {selectedStaff
-                    ? staff.find((s) => s.id === selectedStaff)?.name
+                    ? staff.find((s) => s.id === selectedStaff)?.displayName
                     : "Premier disponible"}
                 </span>
               </div>
               <div className="flex items-center justify-between py-3 border-b">
-                <span className="text-gray-500">Date</span>
+                <span className="text-gray-500">Date & Heure</span>
                 <span>
-                  {selectedDate} a {selectedTime}
+                  {selectedDate} à {selectedTime}
                 </span>
               </div>
               <div className="flex items-center justify-between py-3 border-b">
-                <span className="text-gray-500">Duree</span>
+                <span className="text-gray-500">Durée</span>
                 <span>{totalDuration} min</span>
+              </div>
+              <div className="flex items-center justify-between py-3 border-b">
+                <span className="text-gray-500">Notes</span>
+                <span className="text-right max-w-xs">
+                  {notes || "—"}
+                </span>
               </div>
               <div className="flex items-center justify-between py-3 text-lg font-bold">
                 <span>Total</span>
                 <span>{totalPrice} DH</span>
               </div>
 
-              <Button className="w-full" size="lg">
-                <CreditCard className="mr-2 h-5 w-5" />
-                Confirmer la reservation
+              {/* Notes field */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Note / Commentaire (optionnel)
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  placeholder="Précisez vos attentes..."
+                />
+              </div>
+
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={submitBooking}
+                disabled={loading}
+              >
+                {loading ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <CreditCard className="mr-2 h-5 w-5" />
+                )}
+                {loading ? "Confirmation en cours..." : "Confirmer la réservation"}
               </Button>
             </div>
           </CardContent>
@@ -278,7 +524,13 @@ export default function BookingPage() {
       <div className="flex justify-between mt-6">
         <Button
           variant="outline"
-          onClick={() => setStep(Math.max(0, step - 1))}
+          onClick={() => {
+            setStep(Math.max(0, step - 1));
+            if (step === 2) {
+              setAvailability(null);
+              setSelectedTime(null);
+            }
+          }}
           disabled={step === 0}
         >
           <ChevronLeft className="h-4 w-4 mr-1" />
@@ -304,7 +556,7 @@ export default function BookingPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">
-                {selectedServices.length} service(s) - {totalDuration} min
+                {selectedServices.length} service(s) — {totalDuration} min
               </p>
               <p className="font-bold">{totalPrice} DH</p>
             </div>
