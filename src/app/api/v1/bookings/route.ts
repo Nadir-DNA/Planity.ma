@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateBookingReference } from "@/lib/utils";
+import { sendBookingConfirmation } from "@/server/services/notification.service";
 
 export const dynamic = "force-dynamic";
 
@@ -158,6 +159,9 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ booking }, { status: 201 });
+
+    // Send confirmation email/SMS (non-blocking)
+    sendBookingConfirmation(booking.id).catch(console.error);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur lors de la creation";
     console.error("Booking creation error:", error);
