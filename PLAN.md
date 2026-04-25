@@ -24,6 +24,9 @@
 | État client | **Zustand** + **TanStack Query** | État léger + cache serveur avec invalidation |
 | Formulaires | **React Hook Form + Zod** | Validation partagée client/serveur |
 | Paiements | **CMI (Centre Monétique Interbancaire)** | Paiements marketplace, dépôts, remboursements |
+| | **Espèces** | Paiement en salon |
+| | **Chèque** | Paiement en salon |
+| | **Virement bancaire** | Paiement en salon |
 | Cache/Temps réel | **Redis** | Cache slots, sessions, pub/sub temps réel |
 | Stockage fichiers | **AWS S3 / Cloudflare R2** | Photos salons, avatars, reçus |
 | Email | **Resend** | Emails transactionnels (confirmations, rappels) |
