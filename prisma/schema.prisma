@@ -450,6 +450,8 @@ model Booking {
   cancellationReason String?
   cancelledAt       DateTime?
   cancelledBy       String?       // userId who cancelled
+  reminder24hSent   Boolean       @default(false)
+  reminder1hSent    Boolean       @default(false)
   source            BookingSource @default(ONLINE)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
