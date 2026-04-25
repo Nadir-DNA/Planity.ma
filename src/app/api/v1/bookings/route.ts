@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateBookingReference } from "@/lib/utils";
-import { sendBookingConfirmation } from "@/server/services/notification.service";
+import { sendBookingConfirmation, sendBookingCancellation } from "@/server/services/notification.service";
 
 export const dynamic = "force-dynamic";
 
@@ -166,5 +166,53 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Erreur lors de la creation";
     console.error("Booking creation error:", error);
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json();
+    const { bookingId, reason } = body;
+
+    if (!bookingId) {
+      return NextResponse.json(
+        { error: "bookingId requis" },
+        { status: 400 }
+      );
+    }
+
+    const booking = await db.booking.findFirst({
+      where: {
+        id: bookingId,
+        status: { in: ["PENDING", "CONFIRMED"] },
+      },
+    });
+
+    if (!booking) {
+      return NextResponse.json(
+        { error: "Reservation non trouvee ou non annulable" },
+        { status: 404 }
+      );
+    }
+
+    const updated = await db.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: "CANCELLED",
+        cancellationReason: reason,
+        cancelledAt: new Date(),
+      },
+    });
+
+    // Send cancellation email (non-blocking)
+    sendBookingCancellation(bookingId).catch(console.error);
+
+    return NextResponse.json({ booking: updated });
+  } catch (error) {
+    console.error("Booking cancellation error:", error);
+    return NextResponse.json(
+      { error: "Erreur lors de l'annulation" },
+      { status: 500 }
+    );
   }
 }
