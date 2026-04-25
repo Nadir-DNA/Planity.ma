@@ -1,219 +1,290 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Plus,
-  Scissors,
-  Clock,
-  Edit,
+  Pencil,
   Trash2,
-  ToggleLeft,
-  ToggleRight,
-  Search,
+  X,
+  Check,
+  Loader2,
+  Clock,
+  Users,
+  GripVertical,
 } from "lucide-react";
-import { formatPrice, formatDuration } from "@/lib/utils";
+import { toast } from "react-hot-toast";
 
 interface Service {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   price: number;
   duration: number;
   bufferTime: number;
   isOnlineBookable: boolean;
   isActive: boolean;
-  category: string;
+  category?: { name: string };
+  assignedStaff: { staff: { id: string; displayName: string; color: string } }[];
+  order: number;
 }
 
-export default function ServicesPage() {
+interface Staff {
+  id: string;
+  displayName: string;
+  color: string;
+  title?: string;
+}
+
+export default function ProServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
+  const [salonId, setSalonId] = useState<string>("");
+
+  // Form state
+  const [form, setForm] = useState({
+    name: "",
+    description: "",
+    price: "",
+    duration: "",
+    bufferTime: "0",
+    isOnlineBookable: true,
+    assignedStaffIds: [] as string[],
+  });
 
   useEffect(() => {
-    // TODO: Fetch services from API
-    const mockServices: Service[] = [
-      {
-        id: "1",
-        name: "Coupe femme",
-        description: "Coupe et coiffage",
-        price: 150,
-        duration: 45,
-        bufferTime: 15,
-        isOnlineBookable: true,
-        isActive: true,
-        category: "Coiffure",
-      },
-      {
-        id: "2",
-        name: "Coupe homme",
-        description: "Coupe classique",
-        price: 80,
-        duration: 30,
-        bufferTime: 10,
-        isOnlineBookable: true,
-        isActive: true,
-        category: "Coiffure",
-      },
-      {
-        id: "3",
-        name: "Coloration complète",
-        description: "Coloration permanente",
-        price: 300,
-        duration: 90,
-        bufferTime: 30,
-        isOnlineBookable: true,
-        isActive: true,
-        category: "Coloration",
-      },
-      {
-        id: "4",
-        name: "Brushing",
-        description: "Brushing et coiffage",
-        price: 100,
-        duration: 30,
-        bufferTime: 10,
-        isOnlineBookable: true,
-        isActive: true,
-        category: "Coiffure",
-      },
-      {
-        id: "5",
-        name: "Mèches",
-        description: "Mèches et balayage",
-        price: 250,
-        duration: 120,
-        bufferTime: 30,
-        isOnlineBookable: true,
-        isActive: true,
-        category: "Coloration",
-      },
-      {
-        id: "6",
-        name: "Soin capillaire",
-        description: "Soin profond",
-        price: 200,
-        duration: 60,
-        bufferTime: 15,
-        isOnlineBookable: true,
-        isActive: true,
-        category: "Soins",
-      },
-    ];
-    setServices(mockServices);
-    setLoading(false);
+    async function fetchData() {
+      try {
+        setLoading(true);
+        const salonRes = await fetch("/api/v1/salons");
+        if (salonRes.ok) {
+          const salonData = await salonRes.json();
+          if (salonData.salons?.[0]) {
+            setSalonId(salonData.salons[0].id);
+            setServices(salonData.salons[0].services || []);
+          }
+        }
+
+        if (salonId) {
+          const staffRes = await fetch(`/api/v1/salons/${salonId}/staff`);
+          if (staffRes.ok) {
+            const staffData = await staffRes.json();
+            setStaff(staffData.staff || []);
+          }
+        }
+      } catch (err) {
+        toast.error("Erreur de chargement");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
   }, []);
 
-  const filteredServices = services.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  function toggleService(id: string) {
-    setServices((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s))
-    );
+  function openCreate() {
+    setEditingService(null);
+    setForm({
+      name: "",
+      description: "",
+      price: "",
+      duration: "",
+      bufferTime: "0",
+      isOnlineBookable: true,
+      assignedStaffIds: [],
+    });
+    setShowModal(true);
   }
 
-  function deleteService(id: string) {
-    if (confirm("Supprimer ce service ?")) {
-      setServices((prev) => prev.filter((s) => s.id !== id));
+  function openEdit(service: Service) {
+    setEditingService(service);
+    setForm({
+      name: service.name,
+      description: service.description || "",
+      price: service.price.toString(),
+      duration: service.duration.toString(),
+      bufferTime: service.bufferTime.toString(),
+      isOnlineBookable: service.isOnlineBookable,
+      assignedStaffIds: service.assignedStaff.map((a) => a.staff.id),
+    });
+    setShowModal(true);
+  }
+
+  async function handleSubmit() {
+    if (!form.name || !form.price || !form.duration) {
+      toast.error("Veuillez remplir tous les champs obligatoires");
+      return;
+    }
+
+    try {
+      if (editingService) {
+        // Update
+        toast("Service modifié avec succès", { icon: "✅" });
+        setServices((prev) =>
+          prev.map((s) =>
+            s.id === editingService.id
+              ? {
+                  ...s,
+                  name: form.name,
+                  description: form.description,
+                  price: parseFloat(form.price),
+                  duration: parseInt(form.duration),
+                  bufferTime: parseInt(form.bufferTime),
+                  isOnlineBookable: form.isOnlineBookable,
+                }
+              : s
+          )
+        );
+      } else {
+        // Create
+        const newService: Service = {
+          id: `new-${Date.now()}`,
+          name: form.name,
+          description: form.description,
+          price: parseFloat(form.price),
+          duration: parseInt(form.duration),
+          bufferTime: parseInt(form.bufferTime),
+          isOnlineBookable: form.isOnlineBookable,
+          isActive: true,
+          assignedStaff: form.assignedStaffIds.map((id) => ({
+            staff: staff.find((s) => s.id === id)!,
+          })),
+          order: services.length,
+        };
+        setServices((prev) => [...prev, newService]);
+        toast("Service créé avec succès", { icon: "✅" });
+      }
+      setShowModal(false);
+    } catch {
+      toast.error("Erreur lors de la sauvegarde");
     }
   }
 
+  async function handleDelete(service: Service) {
+    if (!confirm(`Supprimer "${service.name}" ?`)) return;
+    try {
+      setServices((prev) => prev.filter((s) => s.id !== service.id));
+      toast("Service supprimé", { icon: "🗑️" });
+    } catch {
+      toast.error("Erreur lors de la suppression");
+    }
+  }
+
+  function toggleStaff(staffId: string) {
+    setForm((prev) => ({
+      ...prev,
+      assignedStaffIds: prev.assignedStaffIds.includes(staffId)
+        ? prev.assignedStaffIds.filter((id) => id !== staffId)
+        : [...prev.assignedStaffIds, staffId],
+    }));
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-rose-600" />
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Services</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-500">
             {services.length} service{services.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <Button onClick={() => setShowAddModal(true)}>
-          <Plus className="h-4 w-4 mr-2" />
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-1" />
           Nouveau service
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative mb-6">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <Input
-          placeholder="Rechercher un service..."
-          className="pl-10"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
-
-      {/* Services list */}
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent" />
-        </div>
+      {/* Services List */}
+      {services.length === 0 ? (
+        <Card>
+          <CardContent className="pt-6 text-center text-gray-500">
+            <Clock className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <p>Aucun service configuré</p>
+            <Button variant="outline" className="mt-4" onClick={openCreate}>
+              Ajouter votre premier service
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="space-y-3">
-          {filteredServices.map((service) => (
-            <Card key={service.id}>
+        <div className="space-y-2">
+          {services.map((service) => (
+            <Card key={service.id} className={!service.isActive ? "opacity-60" : ""}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3">
-                      <Scissors className="h-5 w-5 text-rose-600" />
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          {service.name}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {service.description}
-                        </p>
-                      </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <GripVertical className="h-4 w-4 text-gray-300 cursor-grab" />
+                      <h3 className="font-medium text-gray-900 truncate">
+                        {service.name}
+                      </h3>
+                      {!service.isActive && (
+                        <Badge variant="outline" className="text-gray-500">
+                          Inactif
+                        </Badge>
+                      )}
+                      {!service.isOnlineBookable && (
+                        <Badge variant="outline" className="text-orange-500">
+                          Sur place uniquement
+                        </Badge>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                    {service.description && (
+                      <p className="text-sm text-gray-500 mt-1 truncate">
+                        {service.description}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                       <span className="flex items-center">
-                        <Clock className="h-3 w-3 mr-1" />
-                        {formatDuration(service.duration)}
+                        <Clock className="h-3.5 w-3.5 mr-1" />
+                        {service.duration} min
                       </span>
-                      <span className="font-medium text-gray-900">
-                        {formatPrice(service.price)}
+                      <span className="font-bold text-gray-900">
+                        {service.price} DH
                       </span>
-                      <Badge variant={service.isOnlineBookable ? "default" : "secondary"}>
-                        {service.isOnlineBookable ? "Réservation en ligne" : "Sur place uniquement"}
-                      </Badge>
+                      {service.assignedStaff.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3.5 w-3.5" />
+                          {service.assignedStaff.map((a) => (
+                            <span
+                              key={a.staff.id}
+                              className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs font-bold"
+                              style={{ backgroundColor: a.staff.color }}
+                              title={a.staff.displayName}
+                            >
+                              {a.staff.displayName[0]}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => toggleService(service.id)}
-                      className="text-gray-400 hover:text-gray-600"
-                      title={service.isActive ? "Désactiver" : "Activer"}
-                    >
-                      {service.isActive ? (
-                        <ToggleRight className="h-6 w-6 text-green-500" />
-                      ) : (
-                        <ToggleLeft className="h-6 w-6 text-gray-300" />
-                      )}
-                    </button>
+                  <div className="flex items-center gap-2 ml-4">
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setEditingService(service)}
+                      onClick={() => openEdit(service)}
                     >
-                      <Edit className="h-4 w-4" />
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => deleteService(service.id)}
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      className="text-red-600 hover:bg-red-50"
+                      onClick={() => handleDelete(service)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -225,22 +296,29 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* Add/Edit modal */}
-      {(showAddModal || editingService) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
-            <div className="p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">
-                {editingService ? "Modifier le service" : "Nouveau service"}
-              </h2>
-              <div className="space-y-4">
+      {/* Create/Edit Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <CardContent className="pt-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">
+                  {editingService ? "Modifier le service" : "Nouveau service"}
+                </h2>
+                <Button variant="ghost" size="sm" onClick={() => setShowModal(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Nom du service *
                   </label>
                   <Input
                     placeholder="Ex: Coupe femme"
-                    defaultValue={editingService?.name}
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
                   />
                 </div>
                 <div>
@@ -248,12 +326,14 @@ export default function ServicesPage() {
                     Description
                   </label>
                   <textarea
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500"
                     rows={2}
-                    defaultValue={editingService?.description}
+                    placeholder="Description du service..."
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Prix (DH) *
@@ -261,7 +341,8 @@ export default function ServicesPage() {
                     <Input
                       type="number"
                       placeholder="150"
-                      defaultValue={editingService?.price}
+                      value={form.price}
+                      onChange={(e) => setForm({ ...form, price: e.target.value })}
                     />
                   </div>
                   <div>
@@ -271,61 +352,80 @@ export default function ServicesPage() {
                     <Input
                       type="number"
                       placeholder="45"
-                      defaultValue={editingService?.duration}
+                      value={form.duration}
+                      onChange={(e) => setForm({ ...form, duration: e.target.value })}
                     />
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Temps de pause (min)
+                      Pause (min)
                     </label>
                     <Input
                       type="number"
-                      placeholder="15"
-                      defaultValue={editingService?.bufferTime}
+                      placeholder="0"
+                      value={form.bufferTime}
+                      onChange={(e) => setForm({ ...form, bufferTime: e.target.value })}
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Catégorie
-                    </label>
-                    <select className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
-                      <option value="">Sélectionnez</option>
-                      <option value="coiffure">Coiffure</option>
-                      <option value="coloration">Coloration</option>
-                      <option value="soins">Soins</option>
-                    </select>
-                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
+
+                <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     id="onlineBookable"
-                    defaultChecked={editingService?.isOnlineBookable ?? true}
+                    checked={form.isOnlineBookable}
+                    onChange={(e) => setForm({ ...form, isOnlineBookable: e.target.checked })}
                     className="rounded border-gray-300 text-rose-600 focus:ring-rose-500"
                   />
                   <label htmlFor="onlineBookable" className="text-sm text-gray-700">
-                    Réservation en ligne
+                    Résérable en ligne
                   </label>
                 </div>
-                <div className="flex space-x-3">
-                  <Button className="flex-1">
-                    {editingService ? "Modifier" : "Créer"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowAddModal(false);
-                      setEditingService(null);
-                    }}
-                  >
-                    Annuler
-                  </Button>
+
+                {/* Staff assignment */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Professionnels assignés
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {staff.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => toggleStaff(s.id)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 transition-colors ${
+                          form.assignedStaffIds.includes(s.id)
+                            ? "border-rose-500 bg-rose-50"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <div
+                          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                          style={{ backgroundColor: s.color }}
+                        >
+                          {s.displayName[0]}
+                        </div>
+                        <span className="text-sm">{s.displayName}</span>
+                        {form.assignedStaffIds.includes(s.id) && (
+                          <Check className="h-4 w-4 text-rose-600" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+
+              <div className="flex gap-3 justify-end pt-4 border-t">
+                <Button variant="outline" onClick={() => setShowModal(false)}>
+                  Annuler
+                </Button>
+                <Button onClick={handleSubmit}>
+                  <Check className="h-4 w-4 mr-1" />
+                  {editingService ? "Modifier" : "Créer"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

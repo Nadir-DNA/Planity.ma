@@ -16,8 +16,7 @@ import {
   Lock,
 } from "lucide-react";
 import { MOROCCAN_CITIES, SALON_CATEGORIES, DAYS_OF_WEEK } from "@/lib/constants";
-import { createSalon } from "@/server/services/salon.service";
-import { registerUser } from "@/server/actions/auth";
+import { completeProOnboarding } from "@/server/actions/pro";
 
 const STEPS = [
   { label: "Votre salon", icon: Building2 },
@@ -134,37 +133,36 @@ export default function ProRegistrationPage() {
 
     startTransition(async () => {
       try {
-        // Create user with PRO_OWNER role
-        const formData = new FormData();
-        formData.append("firstName", salonInfo.name.split(" ")[0]);
-        formData.append("lastName", salonInfo.name.split(" ").slice(1).join(" ") || "Owner");
-        formData.append("email", salonInfo.email);
-        formData.append("phone", salonInfo.phone);
-        formData.append("password", password);
+        const result = await completeProOnboarding({
+          firstName: salonInfo.name.split(" ")[0] || "Propriétaire",
+          lastName: salonInfo.name.split(" ").slice(1).join(" ") || "Salon",
+          email: salonInfo.email,
+          phone: salonInfo.phone,
+          password,
+          salonName: salonInfo.name,
+          salonCategory: salonInfo.category,
+          salonAddress: salonInfo.address,
+          salonCity: salonInfo.city,
+          salonPostalCode: undefined,
+          salonPhone: salonInfo.phone,
+          salonEmail: salonInfo.email,
+          salonDescription: salonInfo.description,
+          openingHours: openingHours.map((h) => ({
+            day: h.day,
+            isOpen: h.isOpen,
+            openTime: h.openTime,
+            closeTime: h.closeTime,
+          })),
+          services: services.filter((s) => s.name && s.price && s.duration),
+          staff: staff.filter((s) => s.name),
+        });
 
-        const userResult = await registerUser(formData);
-
-        if (userResult.error) {
-          setError(userResult.error);
+        if ("error" in result) {
+          setError(result.error);
           return;
         }
 
-        // Create salon
-        await createSalon(
-          {
-            name: salonInfo.name,
-            category: salonInfo.category as "COIFFEUR" | "BARBIER" | "INSTITUT_BEAUTE" | "SPA" | "ONGLES" | "MAQUILLAGE" | "EPILATION" | "MASSAGE" | "AUTRE",
-            address: salonInfo.address,
-            city: salonInfo.city,
-            phone: salonInfo.phone,
-            email: salonInfo.email,
-            description: salonInfo.description,
-          },
-          userResult.userId!
-        );
-
-        // TODO: Create opening hours, services, staff members
-
+        // Redirect to dashboard
         router.push("/pro/agenda");
       } catch {
         setError("Une erreur est survenue lors de la création du salon");
