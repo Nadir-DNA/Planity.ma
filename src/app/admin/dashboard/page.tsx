@@ -1,157 +1,235 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+"use client";
+
+import { useState, useEffect } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
+  Search,
+  Check,
+  X,
+  Eye,
+  BarChart3,
   Users,
   Building2,
-  Calendar,
-  CreditCard,
-  ArrowUpRight,
+  Star,
   TrendingUp,
+  Loader2,
 } from "lucide-react";
+import { toast } from "react-hot-toast";
 
-const platformStats = [
-  {
-    title: "Utilisateurs totaux",
-    value: "12,847",
-    change: "+324 ce mois",
-    icon: Users,
-    color: "text-blue-600 bg-blue-100",
-  },
-  {
-    title: "Salons actifs",
-    value: "487",
-    change: "+18 ce mois",
-    icon: Building2,
-    color: "text-green-600 bg-green-100",
-  },
-  {
-    title: "Reservations (mois)",
-    value: "8,562",
-    change: "+12% vs mois dernier",
-    icon: Calendar,
-    color: "text-purple-600 bg-purple-100",
-  },
-  {
-    title: "Volume transactions",
-    value: "1.2M DH",
-    change: "+15% vs mois dernier",
-    icon: CreditCard,
-    color: "text-rose-600 bg-rose-100",
-  },
-];
+interface DashboardStats {
+  totalSalons: number;
+  activeSalons: number;
+  pendingSalons: number;
+  totalUsers: number;
+  totalBookings: number;
+  totalRevenue: number;
+  averageRating: number;
+  monthlyGrowth: number;
+}
 
-const recentActivity = [
-  { type: "salon", text: "Nouveau salon: Beauty Lounge (Tanger)", time: "Il y a 2h" },
-  { type: "review", text: "5 nouveaux avis en attente de moderation", time: "Il y a 3h" },
-  { type: "user", text: "150 nouvelles inscriptions aujourd'hui", time: "Il y a 4h" },
-  { type: "booking", text: "Record: 412 reservations hier", time: "Il y a 8h" },
-  { type: "salon", text: "Salon Zenith (Marrakech) verifie", time: "Il y a 1j" },
-];
+interface RecentActivity {
+  id: string;
+  type: "salon" | "booking" | "user" | "review";
+  action: string;
+  entity: string;
+  date: string;
+}
 
-export default function AdminDashboard() {
+export default function AdminDashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+        // Mock data
+        const mockStats: DashboardStats = {
+          totalSalons: 156,
+          activeSalons: 142,
+          pendingSalons: 14,
+          totalUsers: 2847,
+          totalBookings: 5432,
+          totalRevenue: 1245600,
+          averageRating: 4.6,
+          monthlyGrowth: 12.5,
+        };
+        setStats(mockStats);
+
+        const mockActivities: RecentActivity[] = [
+          { id: "a1", type: "salon", action: "Nouveau salon inscrit", entity: "Salon Belle Femme - Marrakech", date: "2024-03-20T14:30:00Z" },
+          { id: "a2", type: "booking", action: "150 réservations aujourd'hui", entity: "+12% vs hier", date: "2024-03-20T12:00:00Z" },
+          { id: "a3", type: "user", action: "Nouveau utilisateur", entity: "fatima.z@email.com", date: "2024-03-20T10:15:00Z" },
+          { id: "a4", type: "review", action: "Avis signalé", entity: "Spa Zenith - Marrakech", date: "2024-03-19T16:45:00Z" },
+          { id: "a5", type: "salon", action: "Salon approuvé", entity: "Barber House - Rabat", date: "2024-03-19T09:30:00Z" },
+        ];
+        setRecentActivities(mockActivities);
+      } catch (err) {
+        toast.error("Erreur de chargement");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  function getActivityIcon(type: string) {
+    switch (type) {
+      case "salon":
+        return <Building2 className="h-4 w-4 text-blue-600" />;
+      case "booking":
+        return <TrendingUp className="h-4 w-4 text-green-600" />;
+      case "user":
+        return <Users className="h-4 w-4 text-purple-600" />;
+      case "review":
+        return <Star className="h-4 w-4 text-yellow-600" />;
+      default:
+        return <BarChart3 className="h-4 w-4 text-gray-600" />;
+    }
+  }
+
+  function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-rose-600" />
+      </div>
+    );
+  }
+
+  if (!stats) return null;
+
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Dashboard Plateforme
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Vue d&apos;ensemble de Planity.ma
-        </p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard Admin</h1>
+        <p className="text-sm text-gray-500">Vue d'ensemble de la plateforme</p>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {platformStats.map((stat) => (
-          <Card key={stat.title}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className={`p-2 rounded-lg ${stat.color}`}>
-                  <stat.icon className="h-5 w-5" />
-                </div>
-                <ArrowUpRight className="h-4 w-4 text-green-500" />
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Salons actifs</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.activeSalons}</p>
               </div>
-              <p className="text-2xl font-bold">{stat.value}</p>
-              <p className="text-sm text-gray-500 mt-1">{stat.title}</p>
-              <p className="text-xs text-green-600 mt-2">{stat.change}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Growth chart placeholder */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <TrendingUp className="h-5 w-5 mr-2 text-gray-400" />
-              Croissance utilisateurs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48 flex items-end justify-between space-x-1 px-2">
-              {[30, 45, 38, 52, 48, 60, 55, 72, 68, 80, 75, 92].map((h, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center">
-                  <div
-                    className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
-                    style={{ height: `${(h / 100) * 160}px` }}
-                  />
-                  <span className="text-xs text-gray-400 mt-1">
-                    {["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"][i]}
-                  </span>
-                </div>
-              ))}
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <Building2 className="h-5 w-5 text-blue-600" />
+              </div>
+            </div>
+            <div className="flex items-center mt-2 text-sm text-orange-600">
+              <span>{stats.pendingSalons} en attente</span>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Activite recente</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentActivity.map((activity, i) => (
-                <div key={i} className="flex items-start justify-between">
-                  <p className="text-sm text-gray-700">{activity.text}</p>
-                  <span className="text-xs text-gray-400 whitespace-nowrap ml-4">
-                    {activity.time}
-                  </span>
-                </div>
-              ))}
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Utilisateurs</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalUsers.toLocaleString()}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                <Users className="h-5 w-5 text-purple-600" />
+              </div>
+            </div>
+            <div className="flex items-center mt-2 text-sm text-green-600">
+              <TrendingUp className="h-3 w-3 mr-1" />
+              +{stats.monthlyGrowth}% ce mois
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">RDV ce mois</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalBookings.toLocaleString()}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                <BarChart3 className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
+            <div className="flex items-center mt-2 text-sm text-gray-500">
+              <span>Revenu: {(stats.totalRevenue / 1000).toFixed(0)}k DH</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Note moyenne</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.averageRating}/5</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
+                <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
+              </div>
+            </div>
+            <div className="flex items-center mt-2 text-sm text-gray-500">
+              <span>Basé sur {stats.totalBookings} avis</span>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Top cities */}
+      {/* Quick Actions */}
       <Card>
-        <CardHeader>
-          <CardTitle>Top villes par reservations</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
+          <h2 className="text-lg font-semibold mb-4">Actions rapides</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Button variant="outline" className="justify-start">
+              <Building2 className="h-4 w-4 mr-2" />
+              Salons en attente ({stats.pendingSalons})
+            </Button>
+            <Button variant="outline" className="justify-start">
+              <Star className="h-4 w-4 mr-2" />
+              Avis à modérer
+            </Button>
+            <Button variant="outline" className="justify-start">
+              <Users className="h-4 w-4 mr-2" />
+              Gérer utilisateurs
+            </Button>
+            <Button variant="outline" className="justify-start">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Voir statistiques
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Recent Activity */}
+      <Card>
+        <CardContent className="pt-6">
+          <h2 className="text-lg font-semibold mb-4">Activité récente</h2>
           <div className="space-y-3">
-            {[
-              { city: "Casablanca", bookings: 3240, salons: 185, pct: 38 },
-              { city: "Rabat", bookings: 1850, salons: 98, pct: 22 },
-              { city: "Marrakech", bookings: 1420, salons: 76, pct: 17 },
-              { city: "Tanger", bookings: 680, salons: 42, pct: 8 },
-              { city: "Fes", bookings: 520, salons: 35, pct: 6 },
-            ].map((city) => (
-              <div key={city.city} className="flex items-center space-x-4">
-                <span className="text-sm font-medium w-24">{city.city}</span>
-                <div className="flex-1">
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-rose-500 rounded-full"
-                      style={{ width: `${city.pct}%` }}
-                    />
-                  </div>
+            {recentActivities.map((activity) => (
+              <div key={activity.id} className="flex items-center gap-3 py-2 border-b last:border-0">
+                {getActivityIcon(activity.type)}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{activity.action}</p>
+                  <p className="text-xs text-gray-500 truncate">{activity.entity}</p>
                 </div>
-                <span className="text-sm text-gray-500 w-20 text-right">
-                  {city.bookings} rdv
-                </span>
-                <span className="text-xs text-gray-400 w-16 text-right">
-                  {city.salons} salons
+                <span className="text-xs text-gray-400 whitespace-nowrap">
+                  {formatDate(activity.date)}
                 </span>
               </div>
             ))}
