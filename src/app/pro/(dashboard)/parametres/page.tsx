@@ -243,15 +243,15 @@ export default function ParametresPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-sm font-medium text-blue-800">
-                Connectez votre compte Stripe pour recevoir les paiements
-              </p>
-              <p className="text-sm text-blue-600 mt-1">
-                Les paiements en ligne et les dépôts seront gérés via Stripe Connect.
-              </p>
-              <Button className="mt-3">Connecter Stripe</Button>
-            </div>
+             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+               <p className="text-sm font-medium text-blue-800">
+                 Connectez votre compte CMI pour recevoir les paiements
+               </p>
+               <p className="text-sm text-blue-600 mt-1">
+                 Les paiements en ligne et les dépôts seront gérés via CMI (Centre Monétique Interbancaire).
+               </p>
+               <Button className="mt-3">Connecter CMI</Button>
+             </div>
           </CardContent>
         </Card>
 
