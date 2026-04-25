@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateBookingReference } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -81,8 +83,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const totalPrice = dbServices.reduce((sum, s) => sum + s.price, 0);
-    const totalDuration = dbServices.reduce((sum, s) => sum + s.duration, 0);
+    const totalPrice = dbServices.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
+    const totalDuration = dbServices.reduce((sum: number, s: { duration: number }) => sum + s.duration, 0);
 
     const [year, month, day] = date.split("-").map(Number);
     const [hours, minutes] = time.split(":").map(Number);
@@ -122,14 +124,14 @@ export async function POST(request: Request) {
 
       let itemStartTime = startTime;
       const items = services.map((svc: { serviceId: string; staffId?: string }) => {
-        const service = dbServices.find((s) => s.id === svc.serviceId)!;
-        const itemEndTime = new Date(itemStartTime.getTime() + service.duration * 60000);
+        const service = dbServices.find((s: { id: string }) => s.id === svc.serviceId)!;
+        const itemEndTime = new Date(itemStartTime.getTime() + (service as { duration: number }).duration * 60000);
         const item = {
           serviceId: svc.serviceId,
           staffId: svc.staffId || services[0].staffId,
           startTime: new Date(itemStartTime),
           endTime: itemEndTime,
-          price: service.price,
+          price: (service as { price: number }).price,
         };
         itemStartTime = itemEndTime;
         return item;

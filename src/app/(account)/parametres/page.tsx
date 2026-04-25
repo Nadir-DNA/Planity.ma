@@ -1,14 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { User, Mail, Phone, Lock, Bell, Trash2 } from "lucide-react";
 
 export default function SettingsPage() {
+  const [firstName, setFirstName] = useState("Fatima");
+  const [lastName, setLastName] = useState("Zahri");
+  const [email, setEmail] = useState("fatima@email.com");
+  const [phone, setPhone] = useState("+212 661-123456");
+
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Parametres</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Paramètres</h1>
 
       <div className="space-y-6">
         {/* Profile */}
@@ -23,15 +29,15 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Prenom
+                  Prénom
                 </label>
-                <Input defaultValue="Fatima" />
+                <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Nom
                 </label>
-                <Input defaultValue="Zahri" />
+                <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
               </div>
             </div>
             <div>
@@ -39,14 +45,14 @@ export default function SettingsPage() {
                 <Mail className="inline h-4 w-4 mr-1" />
                 Email
               </label>
-              <Input type="email" defaultValue="fatima@email.com" />
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 <Phone className="inline h-4 w-4 mr-1" />
-                Telephone
+                Téléphone
               </label>
-              <Input type="tel" defaultValue="+212 661-123456" />
+              <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
             <Button>Enregistrer</Button>
           </CardContent>
@@ -107,7 +113,7 @@ export default function SettingsPage() {
                 />
               </label>
             ))}
-            <Button>Enregistrer les preferences</Button>
+            <Button>Enregistrer les préférences</Button>
           </CardContent>
         </Card>
 
@@ -121,8 +127,8 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-gray-500 mb-4">
-              La suppression de votre compte est irreversible. Toutes vos
-              donnees seront perdues.
+              La suppression de votre compte est irréversible. Toutes vos
+              données seront perdues.
             </p>
             <Button variant="destructive">Supprimer mon compte</Button>
           </CardContent>

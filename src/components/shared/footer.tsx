@@ -72,7 +72,7 @@ export function Footer() {
             <ul className="space-y-3">
               <li>
                 <Link
-                  href="/casablanca"
+                  href="/recherche?city=casablanca"
                   className="text-sm text-gray-500 hover:text-gray-900"
                 >
                   Casablanca
@@ -80,7 +80,7 @@ export function Footer() {
               </li>
               <li>
                 <Link
-                  href="/rabat"
+                  href="/recherche?city=rabat"
                   className="text-sm text-gray-500 hover:text-gray-900"
                 >
                   Rabat
@@ -88,7 +88,7 @@ export function Footer() {
               </li>
               <li>
                 <Link
-                  href="/marrakech"
+                  href="/recherche?city=marrakech"
                   className="text-sm text-gray-500 hover:text-gray-900"
                 >
                   Marrakech
@@ -96,7 +96,7 @@ export function Footer() {
               </li>
               <li>
                 <Link
-                  href="/tanger"
+                  href="/recherche?city=tanger"
                   className="text-sm text-gray-500 hover:text-gray-900"
                 >
                   Tanger

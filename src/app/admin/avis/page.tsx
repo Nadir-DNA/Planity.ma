@@ -1,109 +1,127 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Star, Check, X } from "lucide-react";
+import { Check, X, Star, MessageSquare } from "lucide-react";
 
-const mockReviews = [
-  {
-    id: "1",
-    user: "Fatima Z.",
-    salon: "Salon Elegance",
-    rating: 5,
-    comment: "Excellent service, equipe tres professionnelle !",
-    date: "2024-03-18",
-    status: "PENDING",
-  },
-  {
-    id: "2",
-    user: "Ahmed K.",
-    salon: "Barber House",
-    rating: 2,
-    comment: "Tres decu, temps d'attente tres long et resultat moyen.",
-    date: "2024-03-17",
-    status: "PENDING",
-  },
-  {
-    id: "3",
-    user: "Leila B.",
-    salon: "Spa Zenith",
-    rating: 4,
-    comment: "Bon hammam, personnel accueillant. Un peu cher.",
-    date: "2024-03-16",
-    status: "PENDING",
-  },
-  {
-    id: "4",
-    user: "Mohamed A.",
-    salon: "Salon Elegance",
-    rating: 5,
-    comment: "Toujours au top ! Je recommande vivement.",
-    date: "2024-03-15",
-    status: "APPROVED",
-  },
-];
+interface Review {
+  id: string;
+  salon: string;
+  user: string;
+  rating: number;
+  comment: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+}
 
-export default function AdminReviewsPage() {
-  const [reviews, setReviews] = useState(mockReviews);
-  const pendingCount = reviews.filter((r) => r.status === "PENDING").length;
+export default function AvisPage() {
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [filter, setFilter] = useState<string>("pending");
 
-  function updateStatus(id: string, status: string) {
+  useEffect(() => {
+    const mockReviews: Review[] = [
+      {
+        id: "1",
+        salon: "Salon Elegance",
+        user: "Fatima Z.",
+        rating: 5,
+        comment: "Excellent service, équipe très professionnelle !",
+        status: "pending",
+        createdAt: "2024-03-18",
+      },
+      {
+        id: "2",
+        salon: "Salon Elegance",
+        user: "Ahmed K.",
+        rating: 4,
+        comment: "Très bon salon, je recommande. Un peu d'attente parfois.",
+        status: "pending",
+        createdAt: "2024-03-17",
+      },
+      {
+        id: "3",
+        salon: "Spa Zenith",
+        user: "Leila B.",
+        rating: 5,
+        comment: "Le meilleur spa de Marrakech !",
+        status: "approved",
+        createdAt: "2024-03-15",
+      },
+      {
+        id: "4",
+        salon: "Barber House",
+        user: "Mohammed R.",
+        rating: 1,
+        comment: "Service terrible, à éviter !",
+        status: "pending",
+        createdAt: "2024-03-14",
+      },
+    ];
+    setReviews(mockReviews);
+  }, []);
+
+  const filteredReviews = reviews.filter((r) => r.status === filter);
+
+  function approveReview(id: string) {
     setReviews((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status } : r))
+      prev.map((r) => (r.id === id ? { ...r, status: "approved" as const } : r))
     );
   }
 
+  function rejectReview(id: string) {
+    setReviews((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status: "rejected" as const } : r))
+    );
+  }
+
+  const statusBadge = (status: string) => {
+    switch (status) {
+      case "approved":
+        return <Badge variant="default">Approuvé</Badge>;
+      case "pending":
+        return <Badge variant="warning">En attente</Badge>;
+      case "rejected":
+        return <Badge variant="destructive">Rejeté</Badge>;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Moderation des avis</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {pendingCount} avis en attente de moderation
-        </p>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Avis clients</h1>
+
+      <div className="flex items-center border rounded-lg mb-6">
+        {["pending", "approved", "rejected"].map((f) => (
+          <button
+            key={f}
+            className={`px-4 py-2 text-sm font-medium ${
+              filter === f
+                ? "bg-gray-900 text-white"
+                : "text-gray-600 hover:bg-gray-50"
+            }`}
+            onClick={() => setFilter(f)}
+          >
+            {f === "pending" ? "En attente" : f === "approved" ? "Approuvés" : "Rejetés"}
+          </button>
+        ))}
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex space-x-2 mb-6">
-        <Badge variant="default" className="cursor-pointer">
-          En attente ({pendingCount})
-        </Badge>
-        <Badge variant="outline" className="cursor-pointer">
-          Approuves
-        </Badge>
-        <Badge variant="outline" className="cursor-pointer">
-          Rejetes
-        </Badge>
-      </div>
-
-      <div className="space-y-4">
-        {reviews.map((review) => (
+      <div className="space-y-3">
+        {filteredReviews.map((review) => (
           <Card key={review.id}>
-            <CardContent className="p-5">
+            <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center space-x-3">
-                    <span className="font-medium text-gray-900">{review.user}</span>
-                    <span className="text-gray-400">sur</span>
-                    <span className="font-medium text-gray-900">{review.salon}</span>
-                    <Badge
-                      variant={
-                        review.status === "PENDING"
-                          ? "warning"
-                          : review.status === "APPROVED"
-                          ? "success"
-                          : "destructive"
-                      }
-                    >
-                      {review.status === "PENDING"
-                        ? "En attente"
-                        : review.status === "APPROVED"
-                        ? "Approuve"
-                        : "Rejete"}
-                    </Badge>
+                  <div className="flex items-center space-x-3 mb-2">
+                    <h3 className="font-semibold text-gray-900">
+                      {review.salon}
+                    </h3>
+                    {statusBadge(review.status)}
                   </div>
-                  <div className="flex items-center mt-1">
+                  <div className="flex items-center space-x-2 mb-2">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Star
                         key={i}
@@ -114,26 +132,33 @@ export default function AdminReviewsPage() {
                         }`}
                       />
                     ))}
-                    <span className="ml-2 text-xs text-gray-400">{review.date}</span>
+                    <span className="text-sm text-gray-500 ml-2">
+                      {review.user}
+                    </span>
                   </div>
-                  <p className="mt-2 text-sm text-gray-600">{review.comment}</p>
+                  <p className="text-sm text-gray-700 flex items-start">
+                    <MessageSquare className="h-4 w-4 mr-2 mt-0.5 text-gray-400 flex-shrink-0" />
+                    {review.comment}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    {review.createdAt}
+                  </p>
                 </div>
-
-                {review.status === "PENDING" && (
-                  <div className="flex space-x-1 ml-4">
+                {review.status === "pending" && (
+                  <div className="flex items-center space-x-2 ml-4">
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
-                      onClick={() => updateStatus(review.id, "APPROVED")}
+                      size="sm"
+                      className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                      onClick={() => approveReview(review.id)}
                     >
                       <Check className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => updateStatus(review.id, "REJECTED")}
+                      size="sm"
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => rejectReview(review.id)}
                     >
                       <X className="h-4 w-4" />
                     </Button>

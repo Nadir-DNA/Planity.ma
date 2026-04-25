@@ -2,11 +2,14 @@ import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
-import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
+import * as bcrypt from "bcryptjs";
+import { db } from "./db";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const adapter = PrismaAdapter(db) as any;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(db),
+  adapter,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/connexion",
@@ -14,8 +17,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   providers: [
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      clientId: process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     }),
     Credentials({
       name: "credentials",
@@ -23,7 +26,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Mot de passe", type: "password" },
       },
-      async authorize(credentials) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async authorize(credentials: any) {
         if (!credentials?.email || !credentials?.password) return null;
 
         const user = await db.user.findUnique({
@@ -44,29 +48,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           image: user.avatar,
+          role: user.role,
+          locale: user.locale,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async jwt({ token, user }: any) {
       if (user) {
-        const dbUser = await db.user.findUnique({
-          where: { id: user.id },
-          select: { role: true, locale: true },
-        });
-        token.role = dbUser?.role ?? "CONSUMER";
-        token.locale = dbUser?.locale ?? "FR";
+        token.role = user.role ?? "CONSUMER";
+        token.locale = user.locale ?? "FR";
       }
       return token;
     },
-    async session({ session, token }) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async session({ session, token }: any) {
       if (session.user) {
         session.user.id = token.sub!;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (session.user as any).role = token.role;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (session.user as any).locale = token.locale;
+        session.user.role = token.role;
+        session.user.locale = token.locale;
       }
       return session;
     },

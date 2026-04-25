@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
 import { Calendar } from "lucide-react";
 import { APP_NAME } from "@/lib/constants";

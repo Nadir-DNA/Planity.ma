@@ -1,142 +1,323 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Search, AlertTriangle, Package } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Package,
+  Edit,
+  Trash2,
+  Barcode,
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+} from "lucide-react";
+import { formatPrice } from "@/lib/utils";
 
-const mockProducts = [
-  {
-    id: "1",
-    name: "Shampooing Kerastase",
-    sku: "KER-SH-001",
-    price: 280,
-    costPrice: 180,
-    stock: 12,
-    lowThreshold: 5,
-    supplier: "Kerastase Maroc",
-  },
-  {
-    id: "2",
-    name: "Masque L'Oreal",
-    sku: "LOR-MQ-002",
-    price: 180,
-    costPrice: 110,
-    stock: 3,
-    lowThreshold: 5,
-    supplier: "L'Oreal Maroc",
-  },
-  {
-    id: "3",
-    name: "Huile d'Argan bio",
-    sku: "ARG-HU-001",
-    price: 150,
-    costPrice: 80,
-    stock: 25,
-    lowThreshold: 10,
-    supplier: "Cooperative Argan",
-  },
-  {
-    id: "4",
-    name: "Ciseaux professionnels",
-    sku: "OUT-CI-001",
-    price: 450,
-    costPrice: 300,
-    stock: 2,
-    lowThreshold: 3,
-    supplier: "Pro Tools",
-  },
-];
+interface Product {
+  id: string;
+  name: string;
+  barcode: string;
+  sku: string;
+  price: number;
+  costPrice: number;
+  stockQuantity: number;
+  lowStockThreshold: number;
+  supplier: string;
+  isActive: boolean;
+}
 
 export default function StockPage() {
-  const lowStockCount = mockProducts.filter(
-    (p) => p.stock <= p.lowThreshold
-  ).length;
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  useEffect(() => {
+    const mockProducts: Product[] = [
+      {
+        id: "1",
+        name: "Shampooing professionnel 500ml",
+        barcode: "3760001234567",
+        sku: "SH-500",
+        price: 120,
+        costPrice: 60,
+        stockQuantity: 25,
+        lowStockThreshold: 5,
+        supplier: "L'Oréal Pro",
+        isActive: true,
+      },
+      {
+        id: "2",
+        name: "Après-shampooing réparateur",
+        barcode: "3760001234568",
+        sku: "AS-500",
+        price: 95,
+        costPrice: 45,
+        stockQuantity: 3,
+        lowStockThreshold: 5,
+        supplier: "Kérastase",
+        isActive: true,
+      },
+      {
+        id: "3",
+        name: "Masque capillaire intensif",
+        barcode: "3760001234569",
+        sku: "MS-300",
+        price: 180,
+        costPrice: 90,
+        stockQuantity: 15,
+        lowStockThreshold: 5,
+        supplier: "L'Oréal Pro",
+        isActive: true,
+      },
+      {
+        id: "4",
+        name: "Huile d'argan bio",
+        barcode: "3760001234570",
+        sku: "HU-100",
+        price: 250,
+        costPrice: 120,
+        stockQuantity: 8,
+        lowStockThreshold: 3,
+        supplier: "Bio Maroc",
+        isActive: true,
+      },
+    ];
+    setProducts(mockProducts);
+    setLoading(false);
+  }, []);
+
+  const filteredProducts = products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.barcode.includes(searchQuery) ||
+      p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const lowStockProducts = products.filter(
+    (p) => p.stockQuantity <= p.lowStockThreshold
+  );
+
+  const totalValue = products.reduce(
+    (sum, p) => sum + p.price * p.stockQuantity,
+    0
+  );
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Stock & Produits</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Stock</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {mockProducts.length} produits - {lowStockCount} en stock bas
+            Gestion des produits et inventaire
           </p>
         </div>
-        <Button size="sm">
-          <Plus className="h-4 w-4 mr-1" />
-          Ajouter un produit
+        <Button onClick={() => setShowAddModal(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nouveau produit
         </Button>
       </div>
 
-      {/* Alerts */}
-      {lowStockCount > 0 && (
-        <div className="flex items-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-6">
-          <AlertTriangle className="h-5 w-5 text-yellow-600 mr-3" />
-          <div>
-            <p className="text-sm font-medium text-yellow-800">
-              {lowStockCount} produit(s) en stock bas
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-gray-500">Total produits</p>
+            <p className="text-2xl font-bold">{products.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-gray-500">Valeur du stock</p>
+            <p className="text-2xl font-bold">{formatPrice(totalValue)}</p>
+          </CardContent>
+        </Card>
+        <Card className={lowStockProducts.length > 0 ? "border-amber-200 bg-amber-50" : ""}>
+          <CardContent className="p-4">
+            <p className="text-sm text-gray-500">Alertes stock bas</p>
+            <p className="text-2xl font-bold flex items-center">
+              {lowStockProducts.length}
+              {lowStockProducts.length > 0 && (
+                <AlertTriangle className="h-5 w-5 text-amber-500 ml-2" />
+              )}
             </p>
-            <p className="text-xs text-yellow-600">
-              Pensez a passer commande aupres de vos fournisseurs.
-            </p>
-          </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <Input
+          placeholder="Rechercher par nom, code-barres ou SKU..."
+          className="pl-10"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
+      {/* Products list */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-rose-600 border-t-transparent" />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredProducts.map((product) => (
+            <Card
+              key={product.id}
+              className={
+                product.stockQuantity <= product.lowStockThreshold
+                  ? "border-amber-200"
+                  : ""
+              }
+            >
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3">
+                      <Package className="h-5 w-5 text-rose-600" />
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {product.name}
+                        </p>
+                        <div className="flex items-center space-x-3 text-xs text-gray-500">
+                          <span className="flex items-center">
+                            <Barcode className="h-3 w-3 mr-1" />
+                            {product.barcode}
+                          </span>
+                          <span>SKU: {product.sku}</span>
+                          <span>Fournisseur: {product.supplier}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="text-right">
+                      <p className="font-semibold">{formatPrice(product.price)}</p>
+                      <p className="text-xs text-gray-500">
+                        Coût: {formatPrice(product.costPrice)}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <div
+                        className={`text-lg font-bold ${
+                          product.stockQuantity <= product.lowStockThreshold
+                            ? "text-red-600"
+                            : "text-gray-900"
+                        }`}
+                      >
+                        {product.stockQuantity}
+                      </div>
+                      <p className="text-xs text-gray-500">en stock</p>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Button variant="ghost" size="sm">
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm">
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm">
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative max-w-md mb-6">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <Input placeholder="Rechercher un produit..." className="pl-10" />
-      </div>
-
-      {/* Product list */}
-      <Card>
-        <CardContent className="p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-gray-50">
-                <th className="text-left p-4 font-medium text-gray-500">Produit</th>
-                <th className="text-left p-4 font-medium text-gray-500">SKU</th>
-                <th className="text-left p-4 font-medium text-gray-500">Prix vente</th>
-                <th className="text-left p-4 font-medium text-gray-500">Prix achat</th>
-                <th className="text-left p-4 font-medium text-gray-500">Stock</th>
-                <th className="text-left p-4 font-medium text-gray-500">Fournisseur</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mockProducts.map((product) => {
-                const isLow = product.stock <= product.lowThreshold;
-                return (
-                  <tr key={product.id} className="border-b hover:bg-gray-50">
-                    <td className="p-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 rounded bg-gray-100 flex items-center justify-center">
-                          <Package className="h-5 w-5 text-gray-400" />
-                        </div>
-                        <span className="font-medium text-gray-900">
-                          {product.name}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-gray-500 font-mono text-xs">
-                      {product.sku}
-                    </td>
-                    <td className="p-4 font-medium">{product.price} DH</td>
-                    <td className="p-4 text-gray-500">{product.costPrice} DH</td>
-                    <td className="p-4">
-                      <Badge variant={isLow ? "warning" : "success"}>
-                        {product.stock} unites
-                      </Badge>
-                    </td>
-                    <td className="p-4 text-gray-500">{product.supplier}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      {/* Add product modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full">
+            <div className="p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">
+                Nouveau produit
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nom du produit *
+                  </label>
+                  <Input placeholder="Ex: Shampooing professionnel" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Code-barres
+                    </label>
+                    <Input placeholder="3760001234567" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      SKU
+                    </label>
+                    <Input placeholder="SH-500" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Prix de vente (DH) *
+                    </label>
+                    <Input type="number" placeholder="120" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Prix d&apos;achat (DH)
+                    </label>
+                    <Input type="number" placeholder="60" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Stock initial
+                    </label>
+                    <Input type="number" placeholder="10" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Seuil d&apos;alerte
+                    </label>
+                    <Input type="number" placeholder="5" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Fournisseur
+                    </label>
+                    <Input placeholder="L'Oréal Pro" />
+                  </div>
+                </div>
+                <div className="flex space-x-3">
+                  <Button className="flex-1">Créer</Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAddModal(false)}
+                  >
+                    Annuler
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
