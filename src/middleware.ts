@@ -6,6 +6,13 @@ export async function middleware(request: NextRequest) {
   const session = await auth();
   const userRole = (session?.user as { role?: string })?.role;
 
+  // Pages publiques (pas de protection)
+  const publicPages = ["/connexion", "/inscription", "/"];
+  if (publicPages.some(page => request.nextUrl.pathname === page || 
+      request.nextUrl.pathname.startsWith("/api/auth"))) {
+    return NextResponse.next();
+  }
+
   // Routes protégées par rôle
   const protectedRoutes: Record<string, string[]> = {
     "/pro": ["PRO_OWNER", "PRO_STAFF", "ADMIN"],
