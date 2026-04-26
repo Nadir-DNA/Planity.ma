@@ -21,6 +21,9 @@ export const metadata: Metadata = {
     "Rabat",
     "Marrakech",
   ],
+  alternates: {
+    canonical: "https://planity.ma",
+  },
   openGraph: {
     title: APP_NAME,
     description: APP_DESCRIPTION,
