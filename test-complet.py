@@ -92,7 +92,7 @@ async def test_flow_inscription_complete(page, results):
         if email:
             await email.fill(f"teste2e-{int(time.time())}@example.com")
         if phone:
-            await phone.fill("+212600000000")
+            await phone.fill(f"+2126{int(time.time()) % 100000000:08d}")
         if password:
             await password.fill("Test1234!")
         
