@@ -31,6 +31,37 @@ export async function createBooking(params: CreateBookingParams) {
   const startTime = new Date(year, month - 1, day, hours, minutes);
   const endTime = new Date(startTime.getTime() + totalDuration * 60000);
 
+  // Resolve staff IDs: for services without a staffId, find an eligible staff member
+  const resolvedServices = await Promise.all(
+    services.map(async (svc) => {
+      if (svc.staffId) return { ...svc, staffId: svc.staffId };
+
+      // No staff preference — find first active staff member assigned to this service
+      const assignedStaff = await db.staffMember.findFirst({
+        where: {
+          isActive: true,
+          salonId,
+          services: { some: { serviceId: svc.serviceId } },
+        },
+      });
+
+      if (assignedStaff) {
+        return { ...svc, staffId: assignedStaff.id };
+      }
+
+      // Fallback: any active staff member in the salon
+      const salonStaff = await db.staffMember.findFirst({
+        where: { salonId, isActive: true },
+      });
+
+      if (!salonStaff) {
+        throw new Error("Aucun professionnel disponible dans ce salon");
+      }
+
+      return { ...svc, staffId: salonStaff.id };
+    })
+  );
+
   // Generate unique reference
   let reference = generateBookingReference();
   let attempts = 0;
@@ -44,31 +75,29 @@ export async function createBooking(params: CreateBookingParams) {
   // Create in transaction with optimistic locking
   return db.$transaction(async (tx) => {
     // Check for conflicts
-    for (const svc of services) {
-      if (svc.staffId) {
-        const conflicting = await tx.bookingItem.findFirst({
-          where: {
-            staffId: svc.staffId,
-            startTime: { lt: endTime },
-            endTime: { gt: startTime },
-            booking: {
-              status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] },
-            },
+    for (const svc of resolvedServices) {
+      const conflicting = await tx.bookingItem.findFirst({
+        where: {
+          staffId: svc.staffId,
+          startTime: { lt: endTime },
+          endTime: { gt: startTime },
+          booking: {
+            status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] },
           },
-        });
-        if (conflicting) {
-          throw new Error("Creneau non disponible");
-        }
+        },
+      });
+      if (conflicting) {
+        throw new Error("Creneau non disponible");
       }
     }
 
     let currentStart = startTime;
-    const items = services.map((svc) => {
+    const items = resolvedServices.map((svc) => {
       const service = dbServices.find((s) => s.id === svc.serviceId)!;
       const itemEnd = new Date(currentStart.getTime() + service.duration * 60000);
       const item = {
         serviceId: svc.serviceId,
-        staffId: svc.staffId!,
+        staffId: svc.staffId,
         startTime: new Date(currentStart),
         endTime: itemEnd,
         price: service.price,

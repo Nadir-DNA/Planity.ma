@@ -127,7 +127,7 @@ export default function LoginPage() {
               <input type="checkbox" className="rounded border-gray-300 text-rose-600 focus:ring-rose-500" />
               <span className="ml-2 text-sm text-gray-600">Se souvenir de moi</span>
             </label>
-            <Link href="/mot-de-passe-oublie" className="text-sm text-rose-600 hover:underline">
+            <Link href="/mot-de-passe-oublie" className="text-sm text-on-surface-muted hover:text-on-surface transition-colors">
               Mot de passe oublié ?
             </Link>
           </div>

@@ -172,10 +172,9 @@ export default function BookingPage() {
 
       const bookingData = {
         salonId,
-        userId: (session.user as any).id,
         services: selectedServices.map((serviceId) => ({
           serviceId,
-          staffId: selectedStaff || (staff[0]?.id ?? undefined),
+          staffId: selectedStaff || undefined,
         })),
         date: selectedDate,
         time: selectedTime,

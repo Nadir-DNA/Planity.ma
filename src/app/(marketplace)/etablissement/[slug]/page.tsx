@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Star,
   MapPin,
@@ -15,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { MiniMap } from "@/components/ui/salon-map";
 
 interface SalonPageProps {
   params: { slug: string };
@@ -44,6 +46,13 @@ interface MockReview {
   date: string;
 }
 
+interface SalonImage {
+  id: string;
+  url: string;
+  caption: string;
+  order: number;
+}
+
 interface SalonData {
   id: string;
   name: string;
@@ -59,6 +68,8 @@ interface SalonData {
   reviewCount: number;
   latitude: number;
   longitude: number;
+  coverImage?: string;
+  images: SalonImage[];
   services: MockService[];
   staff: MockStaff[];
   openingHours: { dayOfWeek: number; openTime: string; closeTime: string; isClosed: boolean }[];
@@ -83,6 +94,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function SalonPage({ params }: SalonPageProps) {
   const [salon, setSalon] = useState<SalonData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedImage, setSelectedImage] = useState(0);
 
   useEffect(() => {
     async function fetchSalon() {
@@ -106,6 +118,13 @@ export default function SalonPage({ params }: SalonPageProps) {
           reviewCount: s.reviewCount || (s._count?.reviews) || 0,
           latitude: s.latitude || 0,
           longitude: s.longitude || 0,
+          coverImage: s.coverImage || (s.photos?.[0]?.url) || "",
+          images: (s.photos || []).map((p: { id: string; url: string; alt?: string; order: number }) => ({
+            id: p.id,
+            url: p.url,
+            caption: p.alt || "",
+            order: p.order ?? 0,
+          })),
           services: (s.services || []).map((sv: MockService & { name?: string; price?: number; duration?: number }) => ({
             id: sv.id,
             name: sv.name,
@@ -121,12 +140,12 @@ export default function SalonPage({ params }: SalonPageProps) {
             avatar: st.avatar,
           })),
           openingHours: s.openingHours || [],
-          reviews: (s.reviews || []).map((r: MockReview & { user?: { name: string } }) => ({
+          reviews: (s.reviews || []).map((r: MockReview & { user?: { name: string }; createdAt?: string; comment?: string }) => ({
             id: r.id,
             author: r.author || r.user?.name || "Anonyme",
             overallRating: r.overallRating,
-            comment: r.comment,
-            date: r.date || "Récemment",
+            comment: r.comment || "",
+            date: r.date || (r.createdAt ? new Date(r.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "Récemment"),
           })),
         });
       } catch (err) {
@@ -159,6 +178,10 @@ export default function SalonPage({ params }: SalonPageProps) {
   }
 
   const categoryLabel = CATEGORY_LABELS[salon.category] || salon.category;
+  const hasImages = salon.images.length > 0 || salon.coverImage;
+  const heroImage = salon.images.length > 0
+    ? salon.images[selectedImage]?.url || salon.coverImage
+    : salon.coverImage;
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
@@ -178,8 +201,50 @@ export default function SalonPage({ params }: SalonPageProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Image placeholder */}
-          <div className="aspect-[16/9] bg-surface-container-low rounded-md" />
+          {/* Gallery / Cover Image */}
+          {hasImages ? (
+            <div className="space-y-2">
+              <div className="relative aspect-[16/9] bg-surface-container-low rounded-md overflow-hidden">
+                <Image
+                  src={heroImage || ""}
+                  alt={salon.name}
+                  fill
+                  className="object-cover"
+                  priority
+                  sizes="(max-width: 1024px) 100vw, 66vw"
+                />
+              </div>
+              {salon.images.length > 1 && (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {salon.images.map((img, idx) => (
+                    <button
+                      key={img.id}
+                      onClick={() => setSelectedImage(idx)}
+                      className={`relative flex-shrink-0 w-20 h-14 rounded-md overflow-hidden border-2 transition-colors ${
+                        idx === selectedImage
+                          ? "border-on-surface"
+                          : "border-transparent hover:border-outline-light"
+                      }`}
+                    >
+                      <Image
+                        src={img.url}
+                        alt={img.caption || `${salon.name} photo ${idx + 1}`}
+                        fill
+                        className="object-cover"
+                        sizes="80px"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="aspect-[16/9] bg-surface-container-low rounded-md flex items-center justify-center">
+              <span className="text-6xl font-bold text-on-surface-muted select-none">
+                {salon.name?.[0]?.toUpperCase() || "S"}
+              </span>
+            </div>
+          )}
 
           {/* Salon info */}
           <div>
@@ -294,7 +359,9 @@ export default function SalonPage({ params }: SalonPageProps) {
                         />
                       ))}
                     </div>
-                    <p className="mt-2 text-sm text-on-surface-muted">{review.comment}</p>
+                    {review.comment && (
+                      <p className="mt-2 text-sm text-on-surface-muted">{review.comment}</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -344,13 +411,15 @@ export default function SalonPage({ params }: SalonPageProps) {
               </div>
             )}
 
-            {/* Map placeholder */}
-            <div className="mt-6">
-              <h4 className="font-medium text-on-surface mb-3">Localisation</h4>
-              <div className="h-[200px] rounded-md bg-surface-container-low flex items-center justify-center">
-                <span className="text-sm text-on-surface-muted">Carte interactive</span>
+            {/* Interactive Map */}
+            {salon.latitude && salon.longitude && (
+              <div className="mt-6">
+                <h4 className="font-medium text-on-surface mb-3">Localisation</h4>
+                <div className="rounded-md overflow-hidden">
+                  <MiniMap lat={salon.latitude} lng={salon.longitude} height="200px" />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

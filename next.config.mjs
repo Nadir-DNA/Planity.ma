@@ -9,6 +9,10 @@ const nextConfig = {
         protocol: "https",
         hostname: "*.planity.ma",
       },
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+      },
     ],
   },
 };

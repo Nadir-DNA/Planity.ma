@@ -1,11 +1,19 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { Header } from "@/components/shared/header";
 import { Footer } from "@/components/shared/footer";
 
-export default function AccountLayout({
+export default async function AccountLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await auth();
+
+  if (!session) {
+    redirect("/connexion");
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       <Header />

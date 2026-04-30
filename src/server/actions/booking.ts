@@ -1,10 +1,17 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { generateBookingReference } from "@/lib/utils";
 import { createBookingSchema, type CreateBookingInput } from "@/server/validators/booking.schema";
 
 export async function createBooking(input: CreateBookingInput) {
+  // Verify authentication
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { error: "Authentification requise" };
+  }
+
   const data = createBookingSchema.parse(input);
 
   // Fetch services to calculate total price and duration
@@ -26,6 +33,38 @@ export async function createBooking(input: CreateBookingInput) {
   const startTime = new Date(year, month - 1, day, hours, minutes);
   const endTime = new Date(startTime.getTime() + totalDuration * 60000);
 
+  // Resolve staff IDs: for services without a staffId, find an eligible staff member
+  type ResolvedService = { serviceId: string; staffId: string };
+  const resolvedServices: ResolvedService[] = await Promise.all(
+    data.services.map(async (svc): Promise<ResolvedService> => {
+      if (svc.staffId) return { serviceId: svc.serviceId, staffId: svc.staffId };
+
+      // No staff preference — find first active staff member assigned to this service
+      const assignedStaff = await db.staffMember.findFirst({
+        where: {
+          isActive: true,
+          salonId: data.salonId,
+          services: { some: { serviceId: svc.serviceId } },
+        },
+      });
+
+      if (assignedStaff) {
+        return { serviceId: svc.serviceId, staffId: assignedStaff.id };
+      }
+
+      // Fallback: any active staff member in the salon
+      const salonStaff = await db.staffMember.findFirst({
+        where: { salonId: data.salonId, isActive: true },
+      });
+
+      if (!salonStaff) {
+        throw new Error("Aucun professionnel disponible dans ce salon");
+      }
+
+      return { serviceId: svc.serviceId, staffId: salonStaff.id };
+    })
+  );
+
   // Generate unique reference
   let reference: string;
   let attempts = 0;
@@ -39,57 +78,53 @@ export async function createBooking(input: CreateBookingInput) {
   // Create booking with items (in a transaction for atomicity)
   const booking = await db.$transaction(async (tx) => {
     // Double-check availability within transaction
-    for (const svc of data.services) {
-      if (svc.staffId) {
-        const conflicting = await tx.bookingItem.findFirst({
-          where: {
-            staffId: svc.staffId,
-            startTime: { lt: endTime },
-            endTime: { gt: startTime },
-            booking: { status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] } },
-          },
-        });
-        if (conflicting) {
-          throw new Error(
-            "Le creneau n'est plus disponible pour ce professionnel"
-          );
-        }
+    for (const svc of resolvedServices) {
+      const conflicting = await tx.bookingItem.findFirst({
+        where: {
+          staffId: svc.staffId,
+          startTime: { lt: endTime },
+          endTime: { gt: startTime },
+          booking: { status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] } },
+        },
+      });
+      if (conflicting) {
+        throw new Error(
+          "Le creneau n'est plus disponible pour ce professionnel"
+        );
       }
     }
+
+    let itemStartTime = startTime;
+    const items = resolvedServices.map((svc) => {
+      const service = services.find((s) => s.id === svc.serviceId)!;
+      const itemEndTime = new Date(itemStartTime.getTime() + service.duration * 60000);
+      const item = {
+        serviceId: svc.serviceId,
+        staffId: svc.staffId,
+        startTime: new Date(itemStartTime),
+        endTime: itemEndTime,
+        price: service.price,
+      };
+      itemStartTime = itemEndTime;
+      return item;
+    });
 
     const newBooking = await tx.booking.create({
       data: {
         reference: reference!,
-        userId: "placeholder-user-id", // TODO: get from auth session
+        userId: session.user.id,
         salonId: data.salonId,
         startTime,
         endTime,
         totalPrice,
         source: "ONLINE",
+        status: "CONFIRMED",
         notes: data.notes,
         items: {
-          create: data.services.map((svc, i) => {
-            const service = services.find((s) => s.id === svc.serviceId)!;
-            const itemStart = new Date(
-              startTime.getTime() +
-                services
-                  .slice(0, i)
-                  .reduce((sum, s) => sum + s.duration, 0) * 60000
-            );
-            const itemEnd = new Date(
-              itemStart.getTime() + service.duration * 60000
-            );
-            return {
-              serviceId: svc.serviceId,
-              staffId: svc.staffId || "placeholder-staff-id", // TODO: assign first available
-              startTime: itemStart,
-              endTime: itemEnd,
-              price: service.price,
-            };
-          }),
+          create: items,
         },
       },
-      include: { items: true },
+      include: { items: { include: { service: true, staff: true } } },
     });
 
     return newBooking;
