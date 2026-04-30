@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createId as createCuid } from "@paralleldrive/cuid2";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 
@@ -96,6 +97,7 @@ export async function POST(request: Request) {
     const { data: service, error: createError } = await supabaseAdmin
       .from("Service")
       .insert({
+        id: createCuid(),
         salonId: salon.id,
         name,
         price: parseFloat(price),
@@ -121,6 +123,7 @@ export async function POST(request: Request) {
     // Create staff assignments if provided
     if (assignedStaffIds?.length) {
       const staffAssignments = assignedStaffIds.map((staffId: string) => ({
+        id: createCuid(),
         serviceId: service.id,
         staffId,
       }));

@@ -1,6 +1,7 @@
 "use server";
 
 import { supabaseAdmin, findByUnique, findFirst } from "@/lib/supabase-helpers";
+import { createId as createCuid } from "@paralleldrive/cuid2";
 import { getUser } from "@/lib/auth";
 import { generateBookingReference } from "@/lib/utils";
 import { createBookingSchema, type CreateBookingInput } from "@/server/validators/booking.schema";
@@ -124,6 +125,7 @@ export async function createBooking(input: CreateBookingInput) {
   const { data: newBooking, error: bookingError } = await supabaseAdmin
     .from("Booking")
     .insert({
+      id: createCuid(),
       reference: reference!,
       userId: user.id,
       salonId: data.salonId,
@@ -147,6 +149,7 @@ export async function createBooking(input: CreateBookingInput) {
     const service = services.find((s: { id: string }) => s.id === svc.serviceId)!;
     const itemEndTime = new Date(itemStartTime.getTime() + (service as { duration: number }).duration * 60000);
     const item = {
+      id: createCuid(),
       bookingId,
       serviceId: svc.serviceId,
       staffId: svc.staffId,

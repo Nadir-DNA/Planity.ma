@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 import { paginationSchema } from "@/lib/validations";
 import { generateBookingReference } from "@/lib/utils";
+import { createId as createCuid } from "@paralleldrive/cuid2";
 import { sendBookingConfirmation, sendBookingCancellation } from "@/server/services/notification.service";
 
 export const dynamic = "force-dynamic";
@@ -245,6 +246,7 @@ export async function POST(request: Request) {
     const { data: booking, error: createError } = await supabaseAdmin
       .from("Booking")
       .insert({
+        id: createCuid(),
         reference,
         userId,
         salonId,
@@ -268,6 +270,7 @@ export async function POST(request: Request) {
 
     // Create booking items
     const bookingItems = items.map((item) => ({
+      id: createCuid(),
       ...item,
       bookingId: booking.id,
     }));

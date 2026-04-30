@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createId as createCuid } from "@paralleldrive/cuid2";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 import { paginationSchema, apiValidation } from "@/lib/validations";
@@ -153,6 +154,7 @@ export async function POST(request: Request) {
     const { data: review, error: createError } = await supabaseAdmin
       .from("Review")
       .insert({
+        id: createCuid(),
         bookingId,
         userId: user.id,
         salonId,

@@ -6,6 +6,10 @@
  */
 
 import { supabaseAdmin } from "@/lib/supabase";
+import { createId } from "@paralleldrive/cuid2";
+
+/** Generate a CUID2 id — required for Supabase tables without DEFAULT on `id` */
+export const createId2 = createId;
 
 // ============================================================
 // Types
