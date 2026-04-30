@@ -98,6 +98,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Reject past dates
+    const bookingDate = new Date(`${date}T${time}`);
+    if (isNaN(bookingDate.getTime()) || bookingDate < new Date()) {
+      return NextResponse.json(
+        { error: "Impossible de réserver dans le passé" },
+        { status: 400 }
+      );
+    }
+
     // Fetch services — try Supabase first, fallback to mock
     const serviceIds = services.map((s: { serviceId: string }) => s.serviceId);
     let dbServices: Array<{ id: string; price: number; duration: number; salonId: string }> | null = null;

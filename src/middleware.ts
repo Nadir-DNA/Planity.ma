@@ -20,35 +20,55 @@ const UPLOAD_ROUTES = ["/api/v1/upload", "/api/v1/salons"];
 // Protected routes requiring authentication
 const PROTECTED_ROUTES = ["/mes-rendez-vous", "/parametres"];
 
+// Auth routes that should skip Supabase session refresh (prevents redirect loops)
+const AUTH_ROUTES = ["/connexion", "/inscription", "/mot-de-passe-oublie", "/reinitialiser-mot-de-passe", "/verification-email"];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip rate limiting pour les webhooks et health checks
-  if (pathname.includes("/webhook") || pathname === "/api/health") {
+  // Skip middleware for static files
+  if (
+    pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico"
+  ) {
     return NextResponse.next();
   }
 
-  // Supabase session refresh + user extraction
-  const { supabaseResponse, user } = await updateSession(request);
+  // Skip Supabase session refresh for auth pages to prevent redirect loops
+  // Auth pages don't need authenticated user context
+  const isAuthPage = AUTH_ROUTES.some((route) => pathname === route || pathname.startsWith(route + "/"));
 
-  // Identifier pour le rate limiting
-  const identifier = getRateLimitIdentifier(request);
+  let user: Awaited<ReturnType<typeof updateSession>>["user"] | undefined = undefined;
+  let supabaseResponse: NextResponse;
 
-  // Routes d'authentification API - plus restrictif
-  if (AUTH_API_ROUTES.some((route) => pathname.startsWith(route))) {
-    const authLimiter = getAuthRateLimiter();
-    const rateLimitResponse = await checkRateLimit(identifier, authLimiter);
-    if (rateLimitResponse) return rateLimitResponse;
+  if (isAuthPage) {
+    // No session refresh needed for login/register pages
+    supabaseResponse = NextResponse.next({ request });
+  } else {
+    // Supabase session refresh + user extraction
+    const result = await updateSession(request);
+    supabaseResponse = result.supabaseResponse;
+    user = result.user;
   }
 
-  // Routes publiques API - rate limiting standard
-  if (
-    pathname.startsWith("/api/v1/") &&
-    !AUTH_API_ROUTES.some((route) => pathname.startsWith(route))
-  ) {
-    const limiter = getRateLimiter();
-    const rateLimitResponse = await checkRateLimit(identifier, limiter);
-    if (rateLimitResponse) return rateLimitResponse;
+  // Rate limiting for API routes (skip for static/auth pages)
+  if (pathname.startsWith("/api/")) {
+    const identifier = getRateLimitIdentifier(request);
+
+    if (AUTH_API_ROUTES.some((route) => pathname.startsWith(route))) {
+      const authLimiter = getAuthRateLimiter();
+      const rateLimitResponse = await checkRateLimit(identifier, authLimiter);
+      if (rateLimitResponse) return rateLimitResponse;
+    }
+
+    if (
+      pathname.startsWith("/api/v1/") &&
+      !AUTH_API_ROUTES.some((route) => pathname.startsWith(route))
+    ) {
+      const limiter = getRateLimiter();
+      const rateLimitResponse = await checkRateLimit(identifier, limiter);
+      if (rateLimitResponse) return rateLimitResponse;
+    }
   }
 
   // Auth guard: require authentication for protected account routes and /pro
