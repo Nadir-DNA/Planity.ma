@@ -5,9 +5,13 @@ import Google from "next-auth/providers/google";
 import * as bcrypt from "bcryptjs";
 import { db } from "./db";
 
+// Conditional adapter: only use PrismaAdapter when OAuth providers are configured
+// PrismaAdapter is needed for OAuth (Google) but causes issues with Credentials-only setup
+const hasOAuthProviders = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+
 // PrismaAdapter type assertion - needed for NextAuth v5 compatibility
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const adapter = PrismaAdapter(db) as any;
+const adapter = hasOAuthProviders ? (PrismaAdapter(db) as any) : undefined;
 
 // Extend NextAuth types - v5 style
 declare module "next-auth" {
@@ -24,7 +28,7 @@ declare module "next-auth" {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter,
+  ...(adapter ? { adapter } : {}),
   session: { strategy: "jwt" },
   pages: {
     signIn: "/connexion",
@@ -54,7 +58,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const isValid = await bcrypt.compare(
           credentials.password as string,
-          user.passwordHash
+          user.passwordHash,
         );
 
         if (!isValid) return null;
