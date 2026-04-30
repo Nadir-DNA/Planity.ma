@@ -261,9 +261,9 @@ export async function POST(request: Request) {
       .single();
 
     if (createError || !booking) {
-      console.error("Booking creation Supabase error:", createError);
+      console.error("Booking creation Supabase error:", JSON.stringify(createError));
       return NextResponse.json(
-        { error: "Erreur lors de la creation" },
+        { error: "Erreur lors de la creation", details: createError?.message },
         { status: 500 }
       );
     }
