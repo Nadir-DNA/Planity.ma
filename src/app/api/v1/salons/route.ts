@@ -104,6 +104,9 @@ export async function GET(request: Request) {
           openingHours: {
             orderBy: { dayOfWeek: "asc" },
           },
+          photos: {
+            orderBy: { order: "asc" },
+          },
           _count: {
             select: { reviews: true, bookings: true },
           },
