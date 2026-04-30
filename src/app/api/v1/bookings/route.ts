@@ -40,6 +40,8 @@ export async function GET(request: Request) {
 
     const { data: bookings, count: total, error } = await query;
 
+    console.log("[DEBUG] GET bookings:", { userId: user.id, count: total, error: error?.message, dataLen: bookings?.length });
+
     if (error) {
       console.error("Bookings fetch Supabase error:", error);
       return NextResponse.json({
