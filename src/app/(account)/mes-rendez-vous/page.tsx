@@ -15,7 +15,9 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  CalendarX,
 } from "lucide-react";
+import { EmptyState } from "@/components/shared/empty-state";
 import Link from "next/link";
 import { toast } from "react-hot-toast";
 
@@ -300,24 +302,13 @@ export default function AppointmentsPage() {
 
       {/* Booking list */}
       {filteredBookings.length === 0 ? (
-        <div className="text-center py-16">
-          <Calendar className="h-12 w-12 text-gray-300 mx-auto" />
-          <p className="mt-4 text-gray-500">
-            {activeTab === "upcoming"
-              ? "Aucun rendez-vous à venir"
-              : activeTab === "cancelled"
-              ? "Aucun rendez-vous annulé"
-              : "Aucun rendez-vous passé"}
-          </p>
-          {activeTab === "upcoming" && (
-            <Button
-              className="mt-4 bg-gray-900 text-white hover:bg-gray-800 rounded-md"
-              asChild
-            >
-              <Link href="/recherche">Réserver maintenant</Link>
-            </Button>
-          )}
-        </div>
+        <EmptyState
+          icon={CalendarX}
+          title="Aucun rendez-vous"
+          description="Vous n'avez pas encore de rendez-vous. Réservez votre premier soin !"
+          actionLabel="Rechercher un salon"
+          actionHref="/recherche"
+        />
       ) : (
         <div className="space-y-4">
           {filteredBookings.map((booking) => {

@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Check,
 } from "lucide-react";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -655,22 +656,11 @@ function SearchContent() {
               ))}
             </div>
           ) : salons.length === 0 ? (
-            <Card>
-              <CardContent className="pt-12 text-center text-gray-500">
-                <SearchIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-lg font-medium">Aucun salon trouvé</p>
-                <p className="text-sm mt-2">
-                  Essayez de modifier vos filtres ou votre recherche
-                </p>
-                <Button
-                  variant="outline"
-                  className="mt-4 rounded-md"
-                  onClick={clearFilters}
-                >
-                  Réinitialiser les filtres
-                </Button>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={SearchIcon}
+              title="Aucun salon trouvé"
+              description="Essayez de modifier vos critères de recherche ou changez de ville"
+            />
           ) : (
             <div className="space-y-4">
               {salons.map((salon) => (

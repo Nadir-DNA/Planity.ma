@@ -22,15 +22,12 @@ import {
   Droplets,
 } from "lucide-react";
 import { APP_NAME } from "@/lib/constants";
-
-const navItems = [
-  { label: "Coiffeur", href: "/recherche?category=coiffeur" },
-  { label: "Barbier", href: "/recherche?category=barbier" },
-  { label: "Institut", href: "/recherche?category=institut-beaute" },
-  { label: "Spa", href: "/recherche?category=spa" },
-];
+import { useLanguage } from "@/lib/i18n/context";
+import { t } from "@/lib/i18n/translations";
+import { LanguageSwitcher } from "@/components/shared/language-switcher";
 
 export function Header({ transparent = false }: { transparent?: boolean }) {
+  const { locale } = useLanguage();
   const { data: session, status } = useSession();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -55,6 +52,13 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  const navItems = [
+    { label: t("nav.coiffeur", locale), href: "/recherche?category=coiffeur" },
+    { label: t("nav.barbier", locale), href: "/recherche?category=barbier" },
+    { label: t("nav.institut", locale), href: "/recherche?category=institut-beaute" },
+    { label: t("nav.spa", locale), href: "/recherche?category=spa" },
+  ];
 
   return (
     <header
@@ -91,13 +95,15 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
 
           {/* Actions (desktop) */}
           <div className="hidden lg:flex items-center space-x-3">
+            <LanguageSwitcher />
+
             <Link href="/pro/inscription">
               <Button
                 variant="outline"
                 size="sm"
                 className="border-outline-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface rounded-md text-sm"
               >
-                Je suis professionnel
+                {t("nav.pro_cta", locale)}
               </Button>
             </Link>
 
@@ -151,7 +157,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                           onClick={() => setUserMenuOpen(false)}
                         >
                           <Calendar className="h-3.5 w-3.5" />
-                          <span>Mes rendez-vous</span>
+                          <span>{t("nav.my_appointments", locale)}</span>
                         </Link>
                         <Link
                           href="/favoris"
@@ -159,7 +165,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                           onClick={() => setUserMenuOpen(false)}
                         >
                           <Heart className="h-3.5 w-3.5" />
-                          <span>Favoris</span>
+                          <span>{t("nav.favorites", locale)}</span>
                         </Link>
                         <Link
                           href="/parametres"
@@ -167,7 +173,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                           onClick={() => setUserMenuOpen(false)}
                         >
                           <Settings className="h-3.5 w-3.5" />
-                          <span>Paramètres</span>
+                          <span>{t("nav.settings", locale)}</span>
                         </Link>
 
                         {(userRole === "PRO_OWNER" ||
@@ -178,7 +184,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                             onClick={() => setUserMenuOpen(false)}
                           >
                             <User className="h-3.5 w-3.5" />
-                            <span>Espace Pro</span>
+                            <span>{t("nav.pro_space", locale)}</span>
                           </Link>
                         )}
 
@@ -188,7 +194,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                             className="flex items-center space-x-2 px-4 py-2 text-sm text-on-surface-muted hover:text-on-surface hover:bg-surface-container w-full transition-colors"
                           >
                             <LogOut className="h-3.5 w-3.5" />
-                            <span>Déconnexion</span>
+                            <span>{t("nav.logout", locale)}</span>
                           </button>
                         </div>
                       </div>
@@ -203,23 +209,26 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                   className="bg-primary hover:bg-on-surface text-primary-on rounded-md text-sm font-medium"
                 >
                   <LogIn className="mr-1.5 h-3.5 w-3.5" />
-                  Mon compte
+                  {t("nav.my_account", locale)}
                 </Button>
               </Link>
             )}
           </div>
 
-          {/* Mobile menu button */}
-          <button
-            className="lg:hidden p-2"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? (
-              <X className="h-5 w-5 text-on-surface" />
-            ) : (
-              <Menu className="h-5 w-5 text-on-surface" />
-            )}
-          </button>
+          {/* Mobile: language + menu button */}
+          <div className="flex items-center gap-2 lg:hidden">
+            <LanguageSwitcher />
+            <button
+              className="p-2"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? (
+                <X className="h-5 w-5 text-on-surface" />
+              ) : (
+                <Menu className="h-5 w-5 text-on-surface" />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Mobile menu */}
@@ -245,7 +254,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <User className="h-3.5 w-3.5" />
-                <span>Je suis professionnel</span>
+                <span>{t("nav.pro_cta", locale)}</span>
               </Link>
 
               {isAuthenticated ? (
@@ -256,7 +265,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <Calendar className="h-3.5 w-3.5" />
-                    <span>Mes rendez-vous</span>
+                    <span>{t("nav.my_appointments", locale)}</span>
                   </Link>
                   <button
                     onClick={() => {
@@ -266,13 +275,13 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                     className="flex items-center space-x-2 px-3 py-2 text-sm text-on-surface-muted hover:bg-surface-container rounded-md w-full transition-colors"
                   >
                     <LogOut className="h-3.5 w-3.5" />
-                    <span>Déconnexion</span>
+                    <span>{t("nav.logout", locale)}</span>
                   </button>
                 </>
               ) : (
                 <Link href="/connexion" onClick={() => setMobileMenuOpen(false)}>
                   <Button className="w-full mt-1 bg-primary hover:bg-on-surface text-primary-on rounded-md text-sm font-medium">
-                    Mon compte
+                    {t("nav.my_account", locale)}
                   </Button>
                 </Link>
               )}

@@ -9,7 +9,9 @@ import {
   TrendingUp,
   Clock,
   Loader2,
+  CalendarCheck,
 } from "lucide-react";
+import { EmptyState } from "@/components/shared/empty-state";
 import { toast } from "react-hot-toast";
 
 interface Stats {
@@ -208,12 +210,11 @@ export default function ProDashboardPage() {
           Rendez-vous d&apos;aujourd&apos;hui
         </h2>
         {todayBookings.length === 0 ? (
-          <Card className="border border-[rgba(198,198,198,0.2)] rounded-md">
-            <CardContent className="py-12 text-center">
-              <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm text-gray-500">Aucun rendez-vous aujourd&apos;hui</p>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={CalendarCheck}
+            title="Aucun rendez-vous aujourd'hui"
+            description="Profitez de votre journée !"
+          />
         ) : (
           <div className="space-y-2">
             {todayBookings.map((booking) => (
