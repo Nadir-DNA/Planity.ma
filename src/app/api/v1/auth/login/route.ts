@@ -89,8 +89,11 @@ export async function POST(request: Request) {
     return response;
   } catch (error) {
     console.error("Login error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error("Login error details:", message, stack);
     return NextResponse.json(
-      { error: "Erreur interne du serveur" },
+      { error: "Erreur interne du serveur", details: message },
       { status: 500 },
     );
   }
