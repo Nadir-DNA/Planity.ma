@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     // Always filter by authenticated user's ID (ignore client-sent userId)
     let query = supabaseAdmin
       .from("Booking")
-      .select("*, salon:Salon(id, name, slug, city, address)", { count: "exact" })
+      .select("*", { count: "exact" })
       .eq("userId", user.id)
       .order("startTime", { ascending: false })
       .range((page - 1) * limit, (page - 1) * limit + limit - 1);
