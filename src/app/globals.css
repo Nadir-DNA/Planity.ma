@@ -1,20 +1,69 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #111827;
+  /* Clinical Atelier Surface Hierarchy */
+  --surface: #f9f9f9;
+  --surface-container-low: #f3f3f3;
+  --surface-container: #eeeeee;
+  --surface-container-high: #e2e2e2;
+  --surface-container-highest: #e2e2e2;
+  --surface-bright: #f9f9f9;
+  --on-surface: #1a1c1c;
+  --on-surface-variant: #474747;
+  --outline-variant: #c6c6c6;
+  --primary: #000000;
+  --on-primary: #e5e2e1;
 }
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply bg-white text-gray-900 antialiased;
+    @apply antialiased;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: var(--surface);
+    color: var(--on-surface);
+  }
+
+  ::selection {
+    background-color: rgba(0, 0, 0, 0.08);
+    color: var(--on-surface);
   }
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
+  /* Ghost border utility */
+  .ghost-border {
+    border: 1px solid rgba(198, 198, 198, 0.2);
+  }
+  .ghost-border-strong {
+    border: 1px solid rgba(198, 198, 198, 0.35);
+  }
+  /* Ambient shadow — soft glow, not dark stain */
+  .ambient-shadow {
+    box-shadow: 0 20px 40px -4px rgba(26, 28, 28, 0.04);
+  }
+  .ambient-shadow-hover {
+    box-shadow: 0 24px 48px -4px rgba(26, 28, 28, 0.06);
   }
 }
+
+/* Custom scrollbar — minimal, matches aesthetic */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }

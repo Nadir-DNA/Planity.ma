@@ -1,7 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { APP_NAME, APP_DESCRIPTION } from "@/lib/constants";
 import { Providers } from "@/components/shared/providers";
+import { ServiceWorkerRegistration } from "@/components/shared/service-worker-registration";
+
+export const viewport: Viewport = {
+  themeColor: "#f9f9f9",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 export const metadata: Metadata = {
   title: {
@@ -32,6 +41,15 @@ export const metadata: Metadata = {
     locale: "fr_MA",
     type: "website",
   },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: APP_NAME,
+  },
+  formatDetection: {
+    telephone: true,
+  },
 };
 
 export default function RootLayout({
@@ -42,6 +60,7 @@ export default function RootLayout({
   return (
     <html lang="fr" dir="ltr">
       <body className="font-sans antialiased">
+        <ServiceWorkerRegistration />
         <Providers>{children}</Providers>
       </body>
     </html>
