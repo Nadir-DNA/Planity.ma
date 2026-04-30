@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export async function PATCH(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const authUser = await getUser();
+    if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest) {
       const existing = await db.user.findFirst({
         where: {
           phone: phone,
-          NOT: { id: session.user.id },
+          NOT: { id: authUser.id },
         },
       });
       if (existing) {
@@ -59,7 +59,7 @@ export async function PATCH(req: NextRequest) {
     if (locale !== undefined) updateData.locale = locale;
 
     const user = await db.user.update({
-      where: { id: session.user.id },
+      where: { id: authUser.id },
       data: updateData,
       select: {
         id: true,
@@ -82,13 +82,13 @@ export async function PATCH(req: NextRequest) {
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const authUser = await getUser();
+    if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const user = await db.user.findUnique({
-      where: { id: session.user.id },
+    const dbUser = await db.user.findUnique({
+      where: { id: authUser.id },
       select: {
         id: true,
         name: true,
@@ -101,11 +101,11 @@ export async function GET() {
       },
     });
 
-    if (!user) {
+    if (!dbUser) {
       return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
 
-    return NextResponse.json({ user });
+    return NextResponse.json({ user: dbUser });
   } catch (error) {
     console.error("[GET /api/v1/user/profile]", error);
     return NextResponse.json({ error: "Erreur interne du serveur" }, { status: 500 });

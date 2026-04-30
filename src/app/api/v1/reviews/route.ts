@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { paginationSchema, apiValidation } from "@/lib/validations";
 import { z } from "zod";
 
@@ -88,8 +88,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     // Check authentication
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getUser();
+    if (!user?.id) {
       return NextResponse.json(
         { error: "Non autorise" },
         { status: 401 }
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
 
     // Check booking exists and belongs to user
     const booking = await db.booking.findFirst({
-      where: { id: bookingId, userId: session.user.id, salonId, status: "COMPLETED" },
+      where: { id: bookingId, userId: user.id, salonId, status: "COMPLETED" },
     });
 
     if (!booking) {
@@ -136,7 +136,7 @@ export async function POST(request: Request) {
     const review = await db.review.create({
       data: {
         bookingId,
-        userId: session.user.id,
+        userId: user.id,
         salonId,
         overallRating,
         qualityRating,

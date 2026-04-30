@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 const VALID_NOTIFICATION_KEYS = [
@@ -12,8 +12,8 @@ type NotificationKey = (typeof VALID_NOTIFICATION_KEYS)[number];
 
 export async function PATCH(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const authUser = await getUser();
+    if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
@@ -44,8 +44,8 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const user = await db.user.update({
-      where: { id: session.user.id },
+    const dbUser = await db.user.update({
+      where: { id: authUser.id },
       data: updateData,
       select: {
         id: true,
@@ -55,7 +55,7 @@ export async function PATCH(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ user });
+    return NextResponse.json({ user: dbUser });
   } catch (error) {
     console.error("[PATCH /api/v1/user/notifications]", error);
     return NextResponse.json({ error: "Erreur interne du serveur" }, { status: 500 });

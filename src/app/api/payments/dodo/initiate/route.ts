@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { initDodoPayment } from "@/server/services/dodo-payment.service";
 
 /**
@@ -9,9 +9,9 @@ import { initDodoPayment } from "@/server/services/dodo-payment.service";
  */
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
+    const user = await getUser();
 
-    if (!session?.user) {
+    if (!user?.id) {
       return NextResponse.json(
         { error: "Non authentifié" },
         { status: 401 }

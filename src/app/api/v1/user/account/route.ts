@@ -1,25 +1,25 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export async function DELETE() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const authUser = await getUser();
+    if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
     // Verify user exists and is active
-    const user = await db.user.findUnique({
-      where: { id: session.user.id },
+    const dbUser = await db.user.findUnique({
+      where: { id: authUser.id },
       select: { id: true, isActive: true },
     });
 
-    if (!user) {
+    if (!dbUser) {
       return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
 
-    if (!user.isActive) {
+    if (!dbUser.isActive) {
       return NextResponse.json(
         { error: "Ce compte est déjà désactivé" },
         { status: 400 }
@@ -28,10 +28,10 @@ export async function DELETE() {
 
     // Soft delete: set isActive to false
     await db.user.update({
-      where: { id: session.user.id },
+      where: { id: dbUser.id },
       data: {
         isActive: false,
-        email: `deleted_${session.user.id}_${Date.now()}@deleted.planity.ma`,
+        email: `deleted_${dbUser.id}_${Date.now()}@deleted.planity.ma`,
         phone: null,
         name: "Compte supprimé",
         passwordHash: null,

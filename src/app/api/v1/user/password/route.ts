@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import * as bcrypt from "bcryptjs";
 
 export async function PATCH(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const authUser = await getUser();
+    if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
@@ -47,16 +47,16 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Fetch current user with passwordHash
-    const user = await db.user.findUnique({
-      where: { id: session.user.id },
+    const dbUser = await db.user.findUnique({
+      where: { id: authUser.id },
       select: { id: true, passwordHash: true },
     });
 
-    if (!user) {
+    if (!dbUser) {
       return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
 
-    if (!user.passwordHash) {
+    if (!dbUser.passwordHash) {
       return NextResponse.json(
         { error: "Ce compte n'utilise pas de mot de passe (connexion via Google)" },
         { status: 400 }
@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Verify current password
-    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    const isValid = await bcrypt.compare(currentPassword, dbUser.passwordHash);
     if (!isValid) {
       return NextResponse.json(
         { error: "Mot de passe actuel incorrect" },
@@ -77,7 +77,7 @@ export async function PATCH(req: NextRequest) {
     const newHash = await bcrypt.hash(newPassword, saltRounds);
 
     await db.user.update({
-      where: { id: session.user.id },
+      where: { id: dbUser.id },
       data: { passwordHash: newHash },
     });
 

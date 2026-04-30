@@ -1,14 +1,14 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { generateBookingReference } from "@/lib/utils";
 import { createBookingSchema, type CreateBookingInput } from "@/server/validators/booking.schema";
 
 export async function createBooking(input: CreateBookingInput) {
   // Verify authentication
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getUser();
+  if (!user?.id) {
     return { error: "Authentification requise" };
   }
 
@@ -112,7 +112,7 @@ export async function createBooking(input: CreateBookingInput) {
     const newBooking = await tx.booking.create({
       data: {
         reference: reference!,
-        userId: session.user.id,
+        userId: user.id,
         salonId: data.salonId,
         startTime,
         endTime,

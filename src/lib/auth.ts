@@ -35,17 +35,5 @@ export async function getUser(): Promise<AuthUser | null> {
   };
 }
 
-/**
- * Backward-compatible wrapper that returns a session-like object
- * matching the old NextAuth shape: { user: AuthUser } | null.
- * Existing callers using `const session = await auth()` and `session?.user?.id`
- * can keep working without changes.
- */
-export async function auth(): Promise<{ user: AuthUser } | null> {
-  const user = await getUser();
-  if (!user) return null;
-  return { user };
-}
-
 // Re-export createClient for callers that need direct Supabase access
 export { createClient };
