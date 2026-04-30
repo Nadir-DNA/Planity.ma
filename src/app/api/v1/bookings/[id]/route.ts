@@ -69,7 +69,7 @@ export async function PATCH(
         updatedAt: new Date().toISOString(),
       })
       .eq("id", id)
-      .select("*, items:BookingItem(*, service:Service(name, price, duration), staff:StaffMember(id, name)), salon:Salon(id, name, slug, city, address), payment:Payment(id, status, method)")
+      .select("*, items:BookingItem(*, service:Service(name, price, duration), staff:StaffMember(id, displayName)), salon:Salon(id, name, slug, city, address), payment:Payment(id, status, method)")
       .single();
 
     if (updateError) {
@@ -239,7 +239,7 @@ export async function PUT(
         endTime: parsedEnd.toISOString(),
       })
       .eq("id", id)
-      .select("*, items:BookingItem(*, service:Service(name, price, duration), staff:StaffMember(id, name)), salon:Salon(id, name, slug, city, address), payment:Payment(id, status, method)")
+      .select("*, items:BookingItem(*, service:Service(name, price, duration), staff:StaffMember(id, displayName)), salon:Salon(id, name, slug, city, address), payment:Payment(id, status, method)")
       .single();
 
     if (updateError) {
