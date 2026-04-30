@@ -9,9 +9,16 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
+    // CRIT-01 FIX: Require authentication — only fetch own bookings
+    const user = await getUser();
+    if (!user?.id) {
+      return NextResponse.json(
+        { error: "Authentification requise" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-    const salonId = searchParams.get("salonId");
     const status = searchParams.get("status");
     
     // Validate pagination with Zod
@@ -20,15 +27,14 @@ export async function GET(request: Request) {
       limit: searchParams.get("limit"),
     });
 
-    // Build Supabase query filters
+    // Always filter by authenticated user's ID (ignore client-sent userId)
     let query = supabaseAdmin
       .from("Booking")
-      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address), user:User(id, name, email, phone), payment:Payment(*)", { count: "exact" })
+      .select("*, items:BookingItem(*, service:Service(name, price, duration), staff:StaffMember(id, name)), salon:Salon(id, name, slug, city, address), payment:Payment(id, status, method)", { count: "exact" })
+      .eq("userId", user.id)
       .order("startTime", { ascending: false })
       .range((page - 1) * limit, (page - 1) * limit + limit - 1);
 
-    if (userId) query = query.eq("userId", userId);
-    if (salonId) query = query.eq("salonId", salonId);
     if (status) query = query.eq("status", status);
 
     const { data: bookings, count: total, error } = await query;
@@ -43,15 +49,17 @@ export async function GET(request: Request) {
       });
     }
 
+    // Strip PII: don't leak user email/phone
+    const safeBookings = (bookings || []).map(({ user: _u, ...rest }: Record<string, unknown>) => rest);
+
     return NextResponse.json({
-      bookings: bookings || [],
+      bookings: safeBookings,
       total: total || 0,
       page,
       totalPages: Math.ceil((total || 0) / limit),
     });
   } catch (error) {
     console.error("Bookings fetch error:", error);
-    // Return empty result as fallback instead of 500
     return NextResponse.json({
       bookings: [],
       total: 0,
@@ -146,6 +154,23 @@ export async function POST(request: Request) {
         return { ...svc, staffId: salonStaff.id };
       })
     );
+
+    // CRIT-03 FIX: Validate all staffId belong to the salon
+    for (const svc of resolvedServices) {
+      if (svc.staffId) {
+        const { data: staffMember } = await supabaseAdmin
+          .from("StaffMember")
+          .select("id, salonId, isActive")
+          .eq("id", svc.staffId)
+          .maybeSingle();
+        if (!staffMember || staffMember.salonId !== salonId || !staffMember.isActive) {
+          return NextResponse.json(
+            { error: "Professionnel invalide pour ce salon" },
+            { status: 400 }
+          );
+        }
+      }
+    }
 
     // Generate unique reference
     let reference = generateBookingReference();

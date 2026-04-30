@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 import { MOCK_SALONS, searchMockSalons } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
+
+// CRIT-02 FIX: Strip PII fields from salon data
+function stripSalonPII(salon: Record<string, unknown>) {
+  const { ownerId, passwordHash, ...safe } = salon as Record<string, unknown>;
+  return safe;
+}
 
 export async function GET(request: Request) {
   try {
@@ -9,159 +16,60 @@ export async function GET(request: Request) {
     const query = searchParams.get("q") || searchParams.get("query") || "";
     const city = searchParams.get("city") || "";
     const category = searchParams.get("category") || "";
-    const sortBy =
-      searchParams.get("sort") || searchParams.get("sortBy") || "relevance";
+    const sortBy = searchParams.get("sort") || searchParams.get("sortBy") || "relevance";
     const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(searchParams.get("limit") || "20", 10);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "20", 10), 100);
     const minRating = parseFloat(searchParams.get("minRating") || "0");
     const minPrice = parseFloat(searchParams.get("minPrice") || "0");
     const maxPrice = parseFloat(searchParams.get("maxPrice") || "0");
     const isVerified = searchParams.get("isVerified") === "true";
     const isOpen = searchParams.get("isOpen") === "true";
 
-    // Try Supabase first, fallback to mock data
+    // Try Supabase first
     try {
-      const { db } = await import("@/lib/db");
-      const where: Record<string, unknown> = {
-        isActive: true,
-      };
+      let queryBuilder = supabaseAdmin
+        .from("Salon")
+        .select("id, name, slug, category, description, city, address, coverImage, isActive, isVerified, averageRating, reviewCount, latitude, longitude, services:Service(id, name, slug, price, duration, isActive), openingHours:OpeningHour(*), photos:SalonPhoto(*)", { count: "exact" })
+        .eq("isActive", true);
 
-      // Only filter isVerified when explicitly requested
-      if (isVerified) {
-        where.isVerified = true;
-      }
-
-      if (city) {
-        where.city = { contains: city, mode: "insensitive" };
-      }
-
-      // Support multiple categories (comma-separated)
+      if (isVerified) queryBuilder = queryBuilder.eq("isVerified", true);
+      if (city) queryBuilder = queryBuilder.ilike("city", `%${city}%`);
       if (category) {
-        const categories = category
-          .split(",")
-          .map((c) => c.toUpperCase().replace(/-/g, "_").trim())
-          .filter(Boolean);
-        if (categories.length === 1) {
-          where.category = categories[0];
-        } else if (categories.length > 1) {
-          where.category = { in: categories };
-        }
+        const categories = category.split(",").map(c => c.toUpperCase().replace(/-/g, "_").trim()).filter(Boolean);
+        if (categories.length === 1) queryBuilder = queryBuilder.eq("category", categories[0]);
+        else if (categories.length > 1) queryBuilder = queryBuilder.in("category", categories);
       }
+      if (query) queryBuilder = queryBuilder.or(`name.ilike.%${query}%,description.ilike.%${query}%,city.ilike.%${query}%`);
+      if (minRating > 0) queryBuilder = queryBuilder.gte("averageRating", minRating);
 
-      if (query) {
-        where.OR = [
-          { name: { contains: query, mode: "insensitive" } },
-          { description: { contains: query, mode: "insensitive" } },
-          { city: { contains: query, mode: "insensitive" } },
-        ];
-      }
+      const from = (page - 1) * limit;
+      const to = from + limit - 1;
+      queryBuilder = queryBuilder.range(from, to);
 
-      if (minRating > 0) {
-        where.averageRating = { gte: minRating };
-      }
+      if (sortBy === "rating") queryBuilder = queryBuilder.order("averageRating", { ascending: false });
+      else if (sortBy === "name") queryBuilder = queryBuilder.order("name", { ascending: true });
+      else queryBuilder = queryBuilder.order("reviewCount", { ascending: false });
 
-      // Price range filter: salon must have at least one service within range
-      if (minPrice > 0 || maxPrice > 0) {
-        const serviceFilter: Record<string, unknown> = { isActive: true };
-        if (minPrice > 0 && maxPrice > 0) {
-          serviceFilter.price = { gte: minPrice, lte: maxPrice };
-        } else if (minPrice > 0) {
-          serviceFilter.price = { gte: minPrice };
-        } else if (maxPrice > 0) {
-          serviceFilter.price = { lte: maxPrice };
-        }
-        where.services = { some: serviceFilter };
-      }
+      const { data: salons, count: total, error } = await queryBuilder;
 
-      // Open now filter
-      if (isOpen) {
-        const now = new Date();
-        const jsDay = now.getDay(); // 0=Sunday
-        const schemaDay = (jsDay + 6) % 7; // Convert to 0=Monday for schema
-        const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-
-        where.openingHours = {
-          some: {
-            dayOfWeek: schemaDay,
-            isClosed: false,
-            openTime: { lte: currentTime },
-            closeTime: { gte: currentTime },
-          },
-        };
-      }
-
-      const orderBy: Record<string, string> = {};
-      switch (sortBy) {
-        case "rating":
-          orderBy.averageRating = "desc";
-          break;
-        case "name":
-          orderBy.name = "asc";
-          break;
-        default:
-          orderBy.reviewCount = "desc";
-      }
-
-      const [salons, total] = await Promise.all([
-        db.salon.findMany({
-          where,
-          orderBy,
-          skip: (page - 1) * limit,
-          take: limit,
-          include: {
-            services: {
-              where: { isActive: true },
-              take: 5,
-              orderBy: { order: "asc" },
-            },
-            openingHours: {
-              orderBy: { dayOfWeek: "asc" },
-            },
-            photos: {
-              orderBy: { order: "asc" },
-            },
-            _count: {
-              select: { reviews: true, bookings: true },
-            },
-          },
-        }),
-        db.salon.count({ where }),
-      ]);
-
-      // If DB has data, return it
-      if (salons.length > 0 || total > 0) {
+      if (!error && salons && (salons.length > 0 || (total && total > 0))) {
+        const safeSalons = salons.map(stripSalonPII);
         return NextResponse.json({
-          salons,
-          total,
+          salons: safeSalons,
+          total: total || salons.length,
           page,
-          totalPages: Math.ceil(total / limit),
+          totalPages: Math.ceil((total || salons.length) / limit),
         });
       }
     } catch {
-      // DB not available, fall through to mock data
+      // DB not available, fall through to mock
     }
 
-    // Fallback: mock data
-    const result = searchMockSalons({
-      query,
-      city,
-      category,
-      minRating,
-      minPrice,
-      maxPrice,
-      isVerified,
-      isOpen,
-      sortBy,
-      page,
-      limit,
-    });
-
+    // Fallback: mock data (CRIT-02: no PII leak)
+    const result = searchMockSalons({ query, city, category, minRating, minPrice, maxPrice, isVerified, isOpen, sortBy, page, limit });
     return NextResponse.json(result);
   } catch (error) {
     console.error("Search error:", error);
-    return NextResponse.json(
-      { error: "Erreur lors de la recherche" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Erreur lors de la recherche" }, { status: 500 });
   }
 }

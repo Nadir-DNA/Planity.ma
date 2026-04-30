@@ -24,7 +24,7 @@ export async function PATCH(
     // Fetch booking and verify ownership
     const { data: booking } = await supabaseAdmin
       .from("Booking")
-      .select("id, userId, status")
+      .select("id, userId, salonId, status")
       .eq("id", id)
       .single();
 
@@ -35,11 +35,21 @@ export async function PATCH(
       );
     }
 
+    // CRIT-04 FIX: Allow both booking owner AND salon owner to cancel
     if (booking.userId !== user.id) {
-      return NextResponse.json(
-        { error: "Non autorisé" },
-        { status: 403 }
-      );
+      const { data: salon } = await supabaseAdmin
+        .from("Salon")
+        .select("id")
+        .eq("id", booking.salonId)
+        .eq("ownerId", user.id)
+        .maybeSingle();
+
+      if (!salon) {
+        return NextResponse.json(
+          { error: "Non autorisé" },
+          { status: 403 }
+        );
+      }
     }
 
     if (!["PENDING", "CONFIRMED"].includes(booking.status)) {
@@ -58,7 +68,7 @@ export async function PATCH(
         cancellationReason: cancellationReason || null,
       })
       .eq("id", id)
-      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address), user:User(id, name, email, phone), payment:Payment(*)")
+      .select("*, items:BookingItem(*, service:Service(name, price, duration), staff:StaffMember(id, name)), salon:Salon(id, name, slug, city, address), payment:Payment(id, status, method)")
       .single();
 
     if (updateError) {
@@ -139,10 +149,20 @@ export async function PUT(
     }
 
     if (booking.userId !== user.id) {
-      return NextResponse.json(
-        { error: "Non autorisé" },
-        { status: 403 }
-      );
+      // CRIT-04 FIX: Allow salon owner to reschedule too
+      const { data: salon } = await supabaseAdmin
+        .from("Salon")
+        .select("id")
+        .eq("id", booking.salonId)
+        .eq("ownerId", user.id)
+        .maybeSingle();
+
+      if (!salon) {
+        return NextResponse.json(
+          { error: "Non autorisé" },
+          { status: 403 }
+        );
+      }
     }
 
     if (!["PENDING", "CONFIRMED"].includes(booking.status)) {
@@ -218,7 +238,7 @@ export async function PUT(
         endTime: parsedEnd.toISOString(),
       })
       .eq("id", id)
-      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address), user:User(id, name, email, phone), payment:Payment(*)")
+      .select("*, items:BookingItem(*, service:Service(name, price, duration), staff:StaffMember(id, name)), salon:Salon(id, name, slug, city, address), payment:Payment(id, status, method)")
       .single();
 
     if (updateError) {

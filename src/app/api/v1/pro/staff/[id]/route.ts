@@ -12,6 +12,10 @@ export async function PATCH(
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
+    if (!["PRO_OWNER", "PRO_STAFF", "ADMIN"].includes(user.role)) {
+      return NextResponse.json({ error: "Accès réservé aux professionnels" }, { status: 403 });
+    }
+
     const { id } = await params;
 
     // Find salon owned by user
@@ -101,6 +105,10 @@ export async function DELETE(
     const user = await getUser();
     if (!user?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
+
+    if (!["PRO_OWNER", "PRO_STAFF", "ADMIN"].includes(user.role)) {
+      return NextResponse.json({ error: "Accès réservé aux professionnels" }, { status: 403 });
     }
 
     const { id } = await params;

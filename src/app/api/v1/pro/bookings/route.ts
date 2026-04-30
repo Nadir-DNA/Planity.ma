@@ -11,6 +11,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
+    if (!["PRO_OWNER", "PRO_STAFF", "ADMIN"].includes(user.role)) {
+      return NextResponse.json({ error: "Accès réservé aux professionnels" }, { status: 403 });
+    }
+
     // Find salon owned by user
     const { data: salon, error: salonError } = await supabaseAdmin
       .from("Salon")
@@ -78,6 +82,10 @@ export async function PATCH(request: Request) {
     const user = await getUser();
     if (!user?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
+
+    if (!["PRO_OWNER", "PRO_STAFF", "ADMIN"].includes(user.role)) {
+      return NextResponse.json({ error: "Accès réservé aux professionnels" }, { status: 403 });
     }
 
     // Find salon owned by user
