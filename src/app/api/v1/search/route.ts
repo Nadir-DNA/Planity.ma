@@ -65,9 +65,10 @@ export async function GET(request: Request) {
       // DB not available, fall through to mock
     }
 
-    // Fallback: mock data (CRIT-02: no PII leak)
+    // Fallback: mock data (CRIT-02: strip PII)
     const result = searchMockSalons({ query, city, category, minRating, minPrice, maxPrice, isVerified, isOpen, sortBy, page, limit });
-    return NextResponse.json(result);
+    const safeSalons = ((result.salons || result) as unknown as Record<string, unknown>[]).map(stripSalonPII);
+    return NextResponse.json({ salons: safeSalons, total: result.total, page: result.page, totalPages: result.totalPages });
   } catch (error) {
     console.error("Search error:", error);
     return NextResponse.json({ error: "Erreur lors de la recherche" }, { status: 500 });
