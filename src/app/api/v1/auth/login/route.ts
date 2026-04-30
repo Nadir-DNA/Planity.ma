@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServerClient } from "@supabase/ssr";
 import { db } from "@/lib/db";
 import * as bcrypt from "bcryptjs";
 
@@ -35,24 +35,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Sign in with Supabase Auth
-    const supabase = await createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: user.email!,
-      password,
-    });
-
-    if (signInError) {
-      // If Supabase sign-in fails (e.g. user not yet in Supabase Auth),
-      // we still want to proceed based on our DB verification
-      console.error("Supabase signInWithPassword error:", signInError.message);
-      return NextResponse.json(
-        { error: "Erreur de connexion" },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({
+    // Create a response first so we can set cookies on it
+    const response = NextResponse.json({
       user: {
         id: user.id,
         email: user.email,
@@ -61,6 +45,48 @@ export async function POST(request: Request) {
         locale: user.locale,
       },
     });
+
+    // Sign in with Supabase Auth via SSR client (sets auth cookies on response)
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            // Read cookies from the incoming request
+            const cookieHeader = request.headers.get("cookie") || "";
+            return cookieHeader
+              .split(";")
+              .filter(Boolean)
+              .map((c) => {
+                const [name, ...rest] = c.trim().split("=");
+                return { name, value: rest.join("=") };
+              });
+          },
+          setAll(cookiesToSet) {
+            // Set cookies on the outgoing response
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options);
+            });
+          },
+        },
+      },
+    );
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: user.email!,
+      password,
+    });
+
+    if (signInError) {
+      console.error("Supabase signInWithPassword error:", signInError.message);
+      return NextResponse.json(
+        { error: "Erreur de connexion" },
+        { status: 500 },
+      );
+    }
+
+    return response;
   } catch (error) {
     console.error("Login error:", error);
     return NextResponse.json(

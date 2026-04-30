@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServerClient } from "@supabase/ssr";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -29,9 +29,34 @@ export async function POST(request: Request) {
       );
     }
 
-    // Sign up with Supabase Auth
-    const supabase = await createClient();
-    const { error: signUpError } = await supabase.auth.signUp({
+    // Sign up with Supabase Auth (sets cookies on response)
+    const response = NextResponse.json({}, { status: 201 });
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            const cookieHeader = request.headers.get("cookie") || "";
+            return cookieHeader
+              .split(";")
+              .filter(Boolean)
+              .map((c) => {
+                const [name, ...rest] = c.trim().split("=");
+                return { name, value: rest.join("=") };
+              });
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options);
+            });
+          },
+        },
+      },
+    );
+
+    const { data: authData, error: signUpError } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
       options: {
@@ -56,6 +81,7 @@ export async function POST(request: Request) {
     const passwordHash = await bcrypt.hash(data.password, 12);
     const user = await db.user.create({
       data: {
+        id: authData.user?.id, // Use Supabase Auth UUID
         firstName: data.firstName,
         lastName: data.lastName,
         name: `${data.firstName} ${data.lastName}`,
@@ -74,6 +100,7 @@ export async function POST(request: Request) {
       },
     });
 
+    // Override the empty response with the real data
     return NextResponse.json(
       { success: true, user },
       { status: 201 },
