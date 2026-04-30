@@ -69,6 +69,7 @@ export async function GET(request: Request) {
       total: 0,
       page: 1,
       totalPages: 0,
+      _debug: error instanceof Error ? error.message : String(error),
     });
   }
 }
