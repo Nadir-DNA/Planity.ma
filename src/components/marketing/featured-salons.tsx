@@ -1,17 +1,24 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Star, MapPin } from "lucide-react";
-import { MOCK_SALONS, DAYS_FR } from "@/lib/mock-data";
+import { MOCK_SALONS } from "@/lib/mock-data";
 
-const featuredSalons = MOCK_SALONS.slice(0, 6).map((s) => ({
-  id: s.id,
-  name: s.name,
-  slug: s.slug,
-  category: s.category.charAt(0) + s.category.slice(1).toLowerCase().replace(/_/g, " "),
-  city: s.city,
-  rating: s.averageRating,
-  reviewCount: s.reviewCount,
-  priceRange: `À partir de ${Math.min(...s.services.filter(sv => sv.isOnlineBookable).map(sv => sv.price))} DH`,
-}));
+const featuredSalons = MOCK_SALONS.slice(0, 6).map((s) => {
+  const bookableServices = s.services.filter(sv => sv.isOnlineBookable);
+  const prices = bookableServices.map(sv => sv.price);
+  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+  return {
+    id: s.id,
+    name: s.name,
+    slug: s.slug,
+    category: s.category.charAt(0) + s.category.slice(1).toLowerCase().replace(/_/g, " "),
+    city: s.city,
+    rating: s.averageRating,
+    reviewCount: s.reviewCount,
+    priceRange: minPrice > 0 ? `À partir de ${minPrice} DH` : "Sur devis",
+    coverImage: s.coverImage,
+  };
+});
 
 export function FeaturedSalons() {
   return (
@@ -35,8 +42,22 @@ export function FeaturedSalons() {
               href={`/etablissement/${salon.slug}`}
               className="group bg-surface-bright rounded-md border border-outline-light hover:border-outline-medium ambient-shadow-hover transition-all overflow-hidden"
             >
-              {/* Image placeholder */}
-              <div className="aspect-[16/9] bg-surface-container-low" />
+              {/* Cover image */}
+              <div className="relative aspect-[16/9] bg-surface-container-low overflow-hidden">
+                {salon.coverImage ? (
+                  <Image
+                    src={salon.coverImage}
+                    alt={salon.name}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-on-surface-muted text-sm">
+                    {salon.name}
+                  </div>
+                )}
+              </div>
 
               <div className="p-4 space-y-2">
                 {/* Category label */}

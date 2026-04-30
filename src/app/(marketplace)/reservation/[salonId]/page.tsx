@@ -278,7 +278,7 @@ export default function BookingPage() {
               </p>
             ) : (
               <div className="space-y-3">
-                {services.map((service) => (
+                {services.filter((s) => !("isOnlineBookable" in s) || (s as any).isOnlineBookable !== false).map((service) => (
                   <button
                     key={service.id}
                     onClick={() => toggleService(service.id)}

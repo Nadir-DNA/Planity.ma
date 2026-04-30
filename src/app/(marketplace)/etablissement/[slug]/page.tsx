@@ -28,6 +28,8 @@ interface MockService {
   price: number;
   duration: number;
   description?: string;
+  isActive?: boolean;
+  isOnlineBookable?: boolean;
 }
 
 interface MockStaff {
@@ -278,7 +280,7 @@ export default function SalonPage({ params }: SalonPageProps) {
           <div className="bg-surface-bright rounded-md border border-outline-light p-6">
             <h2 className="text-lg font-semibold tracking-tight text-on-surface mb-4">Services</h2>
             <div className="divide-y divide-outline-light">
-              {salon.services.filter((s) => true).map((service) => (
+              {salon.services.filter((s) => s.isOnlineBookable !== false && s.isActive !== false).map((service) => (
                 <div
                   key={service.id}
                   className="flex items-center justify-between py-4 first:pt-0 last:pb-0"
@@ -341,7 +343,7 @@ export default function SalonPage({ params }: SalonPageProps) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <div className="h-8 w-8 rounded-full bg-surface-container-low flex items-center justify-center text-xs font-bold text-on-surface">
-                          {review.author[0]}
+                          {(review.author || "?")[0]}
                         </div>
                         <span className="font-medium text-on-surface">{review.author}</span>
                       </div>

@@ -742,8 +742,8 @@ function SearchContent() {
                                 {salon.phone}
                               </span>
                             )}
-                            <Button size="sm" className="rounded-md">
-                              Réserver
+                            <Button size="sm" className="rounded-md" asChild>
+                              <Link href={`/reservation/${salon.id}`}>Réserver</Link>
                             </Button>
                           </div>
                         </div>

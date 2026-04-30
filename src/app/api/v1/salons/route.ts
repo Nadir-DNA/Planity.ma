@@ -82,6 +82,8 @@ export async function GET(request: Request) {
         description: s.description, city: s.city, address: s.address,
         coverImage: s.coverImage, isActive: s.isActive, isVerified: s.isVerified,
         averageRating: s.averageRating, reviewCount: s.reviewCount,
+        latitude: s.latitude, longitude: s.longitude,
+        photos: s.photos, reviews: s.reviews,
         services: s.services, staff: s.staff, openingHours: s.openingHours,
         _count: { reviews: s.reviewCount, bookings: Math.floor(s.reviewCount * 1.5) },
       })),

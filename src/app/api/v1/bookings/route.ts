@@ -22,11 +22,11 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     
-    // Validate pagination with Zod
-    const { page, limit } = paginationSchema.parse({
-      page: searchParams.get("page"),
-      limit: searchParams.get("limit"),
-    });
+    // Parse pagination — defaults to page 1, limit 20
+    const pageParam = searchParams.get("page");
+    const limitParam = searchParams.get("limit");
+    const page = pageParam ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
+    const limit = limitParam ? Math.min(100, Math.max(1, parseInt(limitParam, 10) || 20)) : 20;
 
     // Always filter by authenticated user's ID (ignore client-sent userId)
     let query = supabaseAdmin

@@ -207,7 +207,7 @@ export const MOCK_SALONS: MockSalon[] = [
     address: "12 Rue Ibn Battouta",
     phone: "+212 539 234 567",
     email: "info@beauty-lounge.ma",
-    coverImage: "https://images.unsplash.com/photo-1522337360788-8b13dee7a157?w=1200&h=800&fit=crop",
+    coverImage: "https://images.unsplash.com/photo-1519014816541-b57beca5a1f8?w=1200&h=800&fit=crop",
     photos: [{"id": "bl-1", "url": "https://images.unsplash.com/photo-1522337360788-8b13dee7a157?w=800&h=600&fit=crop", "alt": "Beauté", "order": 0}],
     isActive: true,
     isVerified: true,
@@ -272,13 +272,13 @@ export const MOCK_SALONS: MockSalon[] = [
   {
     id: "salon-6",
     name: "Océane Spa & Beauté",
-    slug: "oceanе-spa-beaute-agadir",
+    slug: "oceane-spa-beaute-agadir",
     category: "SPA",
     description: "Spa et institut de beauté face à la mer à Agadir. Massages, soins du corps et du visage dans une ambiance océane et relaxante. Idéal après une journée à la plage.",
     city: "Agadir",
     address: "56 Boulevard de la Corniche",
     phone: "+212 528 345 678",
-    email: "reservation@oceanе-spa.ma",
+    email: "reservation@oceane-spa.ma",
     coverImage: "https://images.unsplash.com/photo-1634449571010-02ee6e8f02b6?w=1200&h=800&fit=crop",
     photos: [{"id": "cf-1", "url": "https://images.unsplash.com/photo-1634449571010-02ee6e8f02b6?w=800&h=600&fit=crop", "alt": "Coiffure", "order": 0}, {"id": "cf-2", "url": "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&h=600&fit=crop", "alt": "Salon", "order": 1}],
     isActive: true,
@@ -633,6 +633,23 @@ export function searchMockSalons(params: {
       break;
     case "reviews":
       results.sort((a, b) => b.reviewCount - a.reviewCount);
+      break;
+    case "name":
+      results.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case "price_asc":
+      results.sort((a, b) => {
+        const aMin = Math.min(...a.services.filter(s => s.isOnlineBookable).map(s => s.price));
+        const bMin = Math.min(...b.services.filter(s => s.isOnlineBookable).map(s => s.price));
+        return (aMin || 0) - (bMin || 0);
+      });
+      break;
+    case "price_desc":
+      results.sort((a, b) => {
+        const aMin = Math.min(...a.services.filter(s => s.isOnlineBookable).map(s => s.price));
+        const bMin = Math.min(...b.services.filter(s => s.isOnlineBookable).map(s => s.price));
+        return (bMin || 0) - (aMin || 0);
+      });
       break;
     default:
       results.sort((a, b) => b.reviewCount - a.reviewCount);

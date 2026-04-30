@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getMockSalon } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
@@ -10,53 +11,29 @@ export async function GET(
   try {
     const { slug } = params;
 
-    // Try DB first, fallback to mock
+    // Try Supabase first
     try {
-      const { db } = await import("@/lib/db");
-      const salon = await db.salon.findUnique({
-        where: { slug },
-        include: {
-          services: {
-            where: { isActive: true },
-            orderBy: { order: "asc" },
-            include: {
-              category: true,
-              assignedStaff: {
-                include: { staff: true },
-              },
-            },
-          },
-          staff: {
-            where: { isActive: true },
-            orderBy: { order: "asc" },
-          },
-          openingHours: {
-            orderBy: { dayOfWeek: "asc" },
-          },
-          reviews: {
-            where: { status: "APPROVED" },
-            orderBy: { createdAt: "desc" },
-            take: 10,
-            include: {
-              user: {
-                select: { name: true, avatar: true },
-              },
-            },
-          },
-          photos: {
-            orderBy: { order: "asc" },
-          },
-          _count: {
-            select: { reviews: true, bookings: true },
-          },
-        },
-      });
+      const { data: salon, error } = await supabaseAdmin
+        .from("Salon")
+        .select(`
+          *,
+          services:Service(id, name, description, price, duration, isActive, isOnlineBookable, order),
+          staff:StaffMember(id, displayName, title, color, avatar, bio, isActive, order),
+          openingHours:SalonSchedule(id, dayOfWeek, openTime, closeTime, isClosed),
+          reviews:Review(id, author, overallRating, comment, date, status),
+          photos:SalonPhoto(id, url, alt, order)
+        `)
+        .eq("slug", slug)
+        .eq("isActive", true)
+        .single();
 
-      if (salon) {
-        return NextResponse.json({ salon });
+      if (salon && !error) {
+        // Strip PII from salon response
+        const { email, phone, ownerId, ...safeSalon } = salon;
+        return NextResponse.json({ salon: safeSalon });
       }
     } catch {
-      // DB not available, fall through
+      // Supabase not available, fall through to mock
     }
 
     // Fallback: mock data

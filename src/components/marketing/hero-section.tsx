@@ -84,7 +84,7 @@ export function HeroSection() {
             >
               <option value="">Toutes les villes</option>
               {MOROCCAN_CITIES.map((c) => (
-                <option key={c} value={c.toLowerCase().replace(/[^a-z]/g, "")}>
+                <option key={c} value={c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-")}>
                   {c}
                 </option>
               ))}
