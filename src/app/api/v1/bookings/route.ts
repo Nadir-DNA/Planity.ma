@@ -43,12 +43,13 @@ export async function GET(request: Request) {
     console.log("[DEBUG] GET bookings:", { userId: user.id, count: total, error: error?.message, dataLen: bookings?.length });
 
     if (error) {
-      console.error("Bookings fetch Supabase error:", error);
+      console.error("Bookings fetch Supabase error:", JSON.stringify(error));
       return NextResponse.json({
         bookings: [],
         total: 0,
         page: 1,
         totalPages: 0,
+        _debug: error.message,
       });
     }
 
