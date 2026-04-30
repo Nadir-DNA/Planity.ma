@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -17,46 +16,29 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = registerSchema.parse(body);
 
-    // Check existing user in our DB
-    const existingUser = await db.user.findUnique({
-      where: { email: data.email },
-    });
+    // Check existing user via Supabase REST API
+    const { data: existingUsers, error: checkError } = await supabaseAdmin
+      .from("User")
+      .select("id, email")
+      .eq("email", data.email);
 
-    if (existingUser) {
+    if (checkError) {
+      console.error("Check user error:", checkError.message);
+      return NextResponse.json(
+        { error: "Erreur lors de la vérification" },
+        { status: 500 },
+      );
+    }
+
+    if (existingUsers && existingUsers.length > 0) {
       return NextResponse.json(
         { error: "Un compte avec cet email existe déjà" },
         { status: 409 },
       );
     }
 
-    // Sign up with Supabase Auth (sets cookies on response)
-    const response = NextResponse.json({}, { status: 201 });
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            const cookieHeader = request.headers.get("cookie") || "";
-            return cookieHeader
-              .split(";")
-              .filter(Boolean)
-              .map((c) => {
-                const [name, ...rest] = c.trim().split("=");
-                return { name, value: rest.join("=") };
-              });
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              response.cookies.set(name, value, options);
-            });
-          },
-        },
-      },
-    );
-
-    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+    // Sign up with Supabase Auth (creates auth user)
+    const { data: authData, error: signUpError } = await supabaseAdmin.auth.signUp({
       email: data.email,
       password: data.password,
       options: {
@@ -77,11 +59,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Also create user in our Prisma DB (source of truth for relational data)
+    // Also create user record in Supabase DB via REST
     const passwordHash = await bcrypt.hash(data.password, 12);
-    const user = await db.user.create({
-      data: {
-        id: authData.user?.id, // Use Supabase Auth UUID
+    const userId = authData.user?.id || crypto.randomUUID();
+
+    const { data: newUser, error: insertError } = await supabaseAdmin
+      .from("User")
+      .insert({
+        id: userId,
         firstName: data.firstName,
         lastName: data.lastName,
         name: `${data.firstName} ${data.lastName}`,
@@ -90,19 +75,21 @@ export async function POST(request: Request) {
         passwordHash,
         role: "CONSUMER",
         locale: "FR",
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        locale: true,
-      },
-    });
+        isActive: true,
+      })
+      .select("id, email, name, role, locale")
+      .single();
 
-    // Override the empty response with the real data
+    if (insertError) {
+      console.error("Insert user error:", insertError.message);
+      return NextResponse.json(
+        { error: "Erreur lors de la création du compte" },
+        { status: 500 },
+      );
+    }
+
     return NextResponse.json(
-      { success: true, user },
+      { success: true, user: newUser },
       { status: 201 },
     );
   } catch (error) {

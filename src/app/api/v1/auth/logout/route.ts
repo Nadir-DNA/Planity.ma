@@ -1,42 +1,48 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   try {
-    const response = NextResponse.json({ success: true });
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            const cookieHeader = request.headers.get("cookie") || "";
-            return cookieHeader
-              .split(";")
-              .filter(Boolean)
-              .map((c) => {
-                const [name, ...rest] = c.trim().split("=");
-                return { name, value: rest.join("=") };
-              });
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              response.cookies.set(name, value, options);
-            });
-          },
-        },
-      },
+    // Get the access token from cookies
+    const cookieHeader = request.headers.get("cookie") || "";
+    const cookies = Object.fromEntries(
+      cookieHeader.split(";").map((c) => {
+        const [name, ...rest] = c.trim().split("=");
+        return [name, rest.join("=")];
+      })
     );
 
-    const { error } = await supabase.auth.signOut();
+    const accessToken = cookies["sb-access-token"];
+
+    if (!accessToken) {
+      return NextResponse.json({ success: true });
+    }
+
+    // Sign out from Supabase (invalidates the session)
+    const { error } = await supabaseAdmin.auth.admin.signOut(accessToken);
 
     if (error) {
-      return NextResponse.json(
-        { error: "Erreur lors de la déconnexion" },
-        { status: 500 },
-      );
+      console.error("Supabase signOut error:", error.message);
+      // Still clear cookies locally even if server-side signout fails
     }
+
+    const response = NextResponse.json({ success: true });
+
+    // Clear auth cookies
+    response.cookies.set("sb-access-token", "", {
+      path: "/",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 0,
+    });
+    response.cookies.set("sb-refresh-token", "", {
+      path: "/",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 0,
+    });
 
     return response;
   } catch (error) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import * as bcrypt from "bcryptjs";
 
 export async function POST(request: Request) {
@@ -15,12 +15,23 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify credentials against our Prisma DB (source of truth)
-    const user = await db.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
-    });
+    // Step 1: Verify credentials against our Supabase DB (REST API, works from Vercel)
+    const { data: users, error: dbError } = await supabaseAdmin
+      .from("User")
+      .select("id, email, name, role, locale, passwordHash")
+      .eq("email", email.toLowerCase().trim())
+      .limit(1);
 
-    if (!user || !user.passwordHash) {
+    if (dbError || !users || users.length === 0) {
+      return NextResponse.json(
+        { error: "Identifiants invalides" },
+        { status: 401 },
+      );
+    }
+
+    const user = users[0];
+
+    if (!user.passwordHash) {
       return NextResponse.json(
         { error: "Identifiants invalides" },
         { status: 401 },
@@ -35,7 +46,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create a response first so we can set cookies on it
+    // Step 2: Sign in with Supabase Auth to create a session
+    const { data: authData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+      email: user.email,
+      password,
+    });
+
+    if (signInError) {
+      console.error("Supabase signInWithPassword error:", signInError.message);
+      // Auth sign-in failed, return error
+      return NextResponse.json(
+        { error: "Erreur de connexion" },
+        { status: 500 },
+      );
+    }
+
+    // Step 3: Create response with user data and set auth cookies
     const response = NextResponse.json({
       user: {
         id: user.id,
@@ -46,52 +72,28 @@ export async function POST(request: Request) {
       },
     });
 
-    // Sign in with Supabase Auth via SSR client (sets auth cookies on response)
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            // Read cookies from the incoming request
-            const cookieHeader = request.headers.get("cookie") || "";
-            return cookieHeader
-              .split(";")
-              .filter(Boolean)
-              .map((c) => {
-                const [name, ...rest] = c.trim().split("=");
-                return { name, value: rest.join("=") };
-              });
-          },
-          setAll(cookiesToSet) {
-            // Set cookies on the outgoing response
-            cookiesToSet.forEach(({ name, value, options }) => {
-              response.cookies.set(name, value, options);
-            });
-          },
-        },
-      },
-    );
-
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: user.email!,
-      password,
-    });
-
-    if (signInError) {
-      console.error("Supabase signInWithPassword error:", signInError.message);
-      return NextResponse.json(
-        { error: "Erreur de connexion" },
-        { status: 500 },
-      );
+    // Set Supabase auth cookies on the response
+    if (authData.session) {
+      response.cookies.set("sb-access-token", authData.session.access_token, {
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: authData.session.expires_in,
+      });
+      response.cookies.set("sb-refresh-token", authData.session.refresh_token, {
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+      });
     }
 
     return response;
   } catch (error) {
-    console.error("Login error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
-    const stack = error instanceof Error ? error.stack : undefined;
-    console.error("Login error details:", message, stack);
+    console.error("Login error:", message);
     return NextResponse.json(
       { error: "Erreur interne du serveur", details: message },
       { status: 500 },
