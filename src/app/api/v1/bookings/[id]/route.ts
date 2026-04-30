@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { sendBookingCancellation } from "@/server/services/notification.service";
 
 // PATCH — Cancel a booking (set status to CANCELLED)
@@ -9,8 +9,8 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getUser();
+    if (!user?.id) {
       return NextResponse.json(
         { error: "Authentification requise" },
         { status: 401 }
@@ -31,7 +31,7 @@ export async function PATCH(
       );
     }
 
-    if (booking.userId !== session.user.id) {
+    if (booking.userId !== user.id) {
       return NextResponse.json(
         { error: "Non autorisé" },
         { status: 403 }
@@ -50,7 +50,7 @@ export async function PATCH(
       data: {
         status: "CANCELLED",
         cancelledAt: new Date(),
-        cancelledBy: session.user.id,
+        cancelledBy: user.id,
         cancellationReason: cancellationReason || null,
       },
       include: {
@@ -80,8 +80,8 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getUser();
+    if (!user?.id) {
       return NextResponse.json(
         { error: "Authentification requise" },
         { status: 401 }
@@ -129,7 +129,7 @@ export async function PUT(
       );
     }
 
-    if (booking.userId !== session.user.id) {
+    if (booking.userId !== user.id) {
       return NextResponse.json(
         { error: "Non autorisé" },
         { status: 403 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
+import { updateSession } from "@/lib/supabase/middleware";
 import {
   getRateLimiter,
   getAuthRateLimiter,
@@ -20,16 +20,19 @@ const UPLOAD_ROUTES = ["/api/v1/upload", "/api/v1/salons"];
 // Protected routes requiring authentication
 const PROTECTED_ROUTES = ["/mes-rendez-vous", "/parametres"];
 
-export default auth(async (req) => {
-  const { pathname } = req.nextUrl;
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
   // Skip rate limiting pour les webhooks et health checks
   if (pathname.includes("/webhook") || pathname === "/api/health") {
     return NextResponse.next();
   }
 
+  // Supabase session refresh + user extraction
+  const { supabaseResponse, user } = await updateSession(request);
+
   // Identifier pour le rate limiting
-  const identifier = getRateLimitIdentifier(req as unknown as NextRequest);
+  const identifier = getRateLimitIdentifier(request);
 
   // Routes d'authentification API - plus restrictif
   if (AUTH_API_ROUTES.some((route) => pathname.startsWith(route))) {
@@ -50,12 +53,12 @@ export default auth(async (req) => {
 
   // Auth guard: require authentication for protected account routes and /pro
   const isProtectedRoute = PROTECTED_ROUTES.some((route) =>
-    pathname.startsWith(route)
+    pathname.startsWith(route),
   );
   const isProRoute = pathname.startsWith("/pro");
 
-  if ((isProtectedRoute || isProRoute) && !req.auth) {
-    const loginUrl = new URL("/connexion", req.url);
+  if ((isProtectedRoute || isProRoute) && !user) {
+    const loginUrl = new URL("/connexion", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
@@ -63,23 +66,25 @@ export default auth(async (req) => {
   // Role guard: /pro routes require PRO_OWNER, PRO_STAFF, or ADMIN
   // Allow /pro/inscription (onboarding) for authenticated users of any role
   const isProOnboarding = pathname.startsWith("/pro/inscription");
+  const userRole = user?.user_metadata?.role as string | undefined;
 
-  if (isProRoute && !isProOnboarding && req.auth?.user?.role === "CONSUMER") {
-    const homeUrl = new URL("/", req.url);
+  if (isProRoute && !isProOnboarding && userRole === "CONSUMER") {
+    const homeUrl = new URL("/", request.url);
     homeUrl.searchParams.set("unauthorized", "1");
     return NextResponse.redirect(homeUrl);
   }
 
   // Ajouter les headers de sécurité
-  const response = NextResponse.next();
-
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("X-XSS-Protection", "1; mode=block");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set(
+  supabaseResponse.headers.set("X-Content-Type-Options", "nosniff");
+  supabaseResponse.headers.set("X-Frame-Options", "DENY");
+  supabaseResponse.headers.set("X-XSS-Protection", "1; mode=block");
+  supabaseResponse.headers.set(
+    "Referrer-Policy",
+    "strict-origin-when-cross-origin",
+  );
+  supabaseResponse.headers.set(
     "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=()"
+    "camera=(), microphone=(), geolocation=()",
   );
 
   // CSP strict (sans unsafe-inline pour pages)
@@ -87,7 +92,7 @@ export default auth(async (req) => {
     // Generate nonce for scripts
     const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
 
-    response.headers.set(
+    supabaseResponse.headers.set(
       "Content-Security-Policy",
       [
         "default-src 'self'",
@@ -101,15 +106,15 @@ export default auth(async (req) => {
         "base-uri 'self'",
         "form-action 'self'",
         "object-src 'none'",
-      ].join("; ")
+      ].join("; "),
     );
 
     // Add nonce to request for use in pages
-    response.headers.set("x-nonce", nonce);
+    supabaseResponse.headers.set("x-nonce", nonce);
   }
 
-  return response;
-});
+  return supabaseResponse;
+}
 
 export const config = {
   matcher: [

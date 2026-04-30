@@ -1,1 +1,1 @@
-export { auth, signIn, signOut, handlers } from "@/lib/auth";
+export { auth, getUser } from "@/lib/auth";

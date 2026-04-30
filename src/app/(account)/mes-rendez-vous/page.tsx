@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +58,7 @@ const statusConfig = {
 };
 
 export default function AppointmentsPage() {
-  const { data: session, status } = useSession();
+  const { user, loading: authLoading } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabFilter>("upcoming");
@@ -71,13 +71,12 @@ export default function AppointmentsPage() {
   const [rescheduling, setRescheduling] = useState(false);
 
   const fetchBookings = useCallback(async () => {
-    if (!session?.user) return;
+    if (!user) return;
     try {
       setLoading(true);
-      const userId = (session?.user as any)?.id;
-      if (!userId) return;
+      if (!user.id) return;
 
-      const res = await fetch(`/api/v1/bookings?userId=${userId}`);
+      const res = await fetch(`/api/v1/bookings?userId=${user.id}`);
       if (!res.ok) throw new Error("Erreur chargement");
 
       const data = await res.json();
@@ -87,17 +86,17 @@ export default function AppointmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [session]);
+  }, [user]);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
+    if (!authLoading && !user) {
       setLoading(false);
       return;
     }
-    if (session?.user) {
+    if (user) {
       fetchBookings();
     }
-  }, [session, status, fetchBookings]);
+  }, [user, authLoading, fetchBookings]);
 
   const now = new Date();
 
@@ -240,7 +239,7 @@ export default function AppointmentsPage() {
     { key: "cancelled", label: "Annulés" },
   ];
 
-  if (status === "loading" || loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
@@ -248,7 +247,7 @@ export default function AppointmentsPage() {
     );
   }
 
-  if (status === "unauthenticated") {
+  if (!user) {
     return (
       <div className="text-center py-16">
         <Calendar className="h-12 w-12 text-gray-300 mx-auto" />

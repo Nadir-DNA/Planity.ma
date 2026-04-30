@@ -33,9 +33,10 @@ vi.mock("next/navigation", () => ({
   redirect: vi.fn(),
 }));
 
-vi.mock("next-auth", () => ({
-  getServerSession: vi.fn(),
-  default: vi.fn(),
+// Mock Supabase auth (replaces old next-auth mock)
+vi.mock("@/lib/auth", () => ({
+  auth: vi.fn(),
+  getUser: vi.fn(),
 }));
 
 // Mock environment

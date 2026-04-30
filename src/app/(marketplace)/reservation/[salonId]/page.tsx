@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -51,7 +51,7 @@ interface AvailabilityResult {
 export default function BookingPage() {
   const params = useParams();
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { user } = useAuth();
   const salonId = params?.salonId as string;
 
   const [step, setStep] = useState(0);
@@ -157,7 +157,7 @@ export default function BookingPage() {
   }
 
   async function submitBooking() {
-    if (!session?.user) {
+    if (!user) {
       router.push(`/connexion?callbackUrl=/reservation/${salonId}`);
       return;
     }

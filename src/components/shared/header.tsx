@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { signOut, useSession } from "next-auth/react";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { NotificationBell } from "@/components/ui/notification-bell";
@@ -28,21 +28,16 @@ import { LanguageSwitcher } from "@/components/shared/language-switcher";
 
 export function Header({ transparent = false }: { transparent?: boolean }) {
   const { locale } = useLanguage();
-  const { data: session, status } = useSession();
+  const { user, loading, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(!transparent);
 
-  const isLoading = status === "loading";
-  const isAuthenticated = status === "authenticated";
-
-  interface SessionUser {
-    role?: string;
-  }
-  const userRole = (session?.user as SessionUser)?.role;
+  const isAuthenticated = !!user;
+  const userRole = user?.role;
 
   async function handleSignOut() {
-    await signOut({ callbackUrl: "/" });
+    await logout();
   }
 
   useEffect(() => {
@@ -107,7 +102,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
               </Button>
             </Link>
 
-            {isLoading ? (
+            {loading ? (
               <div className="h-8 w-8 rounded-full bg-surface-container animate-pulse" />
             ) : isAuthenticated ? (
               <>
@@ -129,7 +124,7 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                     className="flex items-center space-x-2 p-1.5 rounded-md hover:bg-surface-container transition-colors"
                   >
                     <Avatar
-                      fallback={session?.user?.name || "U"}
+                      fallback={user?.name || "U"}
                       size="sm"
                     />
                     <ChevronDown className="h-3.5 w-3.5 text-on-surface-muted" />
@@ -144,10 +139,10 @@ export function Header({ transparent = false }: { transparent?: boolean }) {
                       <div className="absolute right-0 mt-2 w-56 rounded-md bg-surface-bright border border-outline-light shadow-lg z-50 py-1">
                         <div className="px-4 py-3 border-b border-outline-light">
                           <p className="text-sm font-medium text-on-surface">
-                            {session?.user?.name}
+                            {user?.name}
                           </p>
                           <p className="text-xs text-on-surface-muted">
-                            {session?.user?.email}
+                            {user?.email}
                           </p>
                         </div>
 

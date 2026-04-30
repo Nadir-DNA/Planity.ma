@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/auth-context";
 import {
   User,
   Lock,
@@ -57,7 +57,7 @@ function formatPhoneDisplay(value: string): string {
 // ─── Component ─────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { data: session, status, update: updateSession } = useSession();
+  const { user, loading: authLoading, refresh: refreshAuth } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -107,13 +107,13 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (status === "authenticated") {
+    if (!authLoading && user) {
       fetchProfile();
     }
-    if (status === "unauthenticated") {
+    if (!authLoading && !user) {
       setLoading(false);
     }
-  }, [status, fetchProfile]);
+  }, [user, authLoading, fetchProfile]);
 
   // ─── Save profile ───────────────────────────
 
@@ -144,7 +144,7 @@ export default function SettingsPage() {
       }
       const data = await res.json();
       setProfile((p) => (p ? { ...p, ...data.user } : data.user));
-      await updateSession();
+      await refreshAuth();
       toast.success("Profil mis à jour");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors de la mise à jour");
@@ -249,7 +249,7 @@ export default function SettingsPage() {
         throw new Error(err.error || "Erreur suppression");
       }
       toast.success("Compte supprimé. Déconnexion…");
-      window.location.href = "/api/auth/signout";
+      window.location.href = "/connexion";
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors de la suppression");
     } finally {
@@ -259,7 +259,7 @@ export default function SettingsPage() {
 
   // ─── Loading / unauthenticated ───────────────
 
-  if (status === "loading" || loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
@@ -267,7 +267,7 @@ export default function SettingsPage() {
     );
   }
 
-  if (status === "unauthenticated" || !profile) {
+  if (!user || !profile) {
     return null;
   }
 

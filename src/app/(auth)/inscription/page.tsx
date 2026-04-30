@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mail, Lock, User, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { registerUser } from "@/server/actions/auth";
 
 const MA_PHONE_REGEX = /^(\+212|0)([6-7]\d{8})$/;
 
@@ -36,7 +35,7 @@ export default function RegisterPage() {
       return true;
     }
     if (!MA_PHONE_REGEX.test(stripped)) {
-setPhoneError("Format invalide. Exemples : 0612345678, +212****5678");
+      setPhoneError("Format invalide. Exemples : 0612345678, +212****5678");
       return false;
     }
     setPhoneError("");
@@ -52,21 +51,30 @@ setPhoneError("Format invalide. Exemples : 0612345678, +212****5678");
     }
 
     startTransition(async () => {
-      const form = new FormData();
-      form.append("firstName", formData.firstName);
-      form.append("lastName", formData.lastName);
-      form.append("email", formData.email);
-      form.append("phone", formData.phone);
-      form.append("password", formData.password);
+      try {
+        const res = await fetch("/api/v1/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email,
+            phone: formData.phone || undefined,
+            password: formData.password,
+          }),
+        });
 
-      const result = await registerUser(form);
+        const data = await res.json();
 
-      if (result.error) {
-        setError(result.error);
-            return;
+        if (!res.ok) {
+          setError(data.error || "Une erreur est survenue lors de l'inscription");
+          return;
+        }
+
+        router.push("/connexion?registered=true");
+      } catch {
+        setError("Une erreur est survenue. Réessayez.");
       }
-
-      router.push("/connexion?registered=true");
     });
   }
 

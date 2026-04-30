@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
 export default async function ProLayout({
@@ -6,18 +6,18 @@ export default async function ProLayout({
 }: {
   children: React.ReactNode;
 }) {
-  let session;
+  let user;
   try {
-    session = await auth();
+    user = await getUser();
   } catch {
     redirect("/connexion");
   }
 
-  if (!session) {
+  if (!user) {
     redirect("/connexion");
   }
 
-  if (session.user.role === "CONSUMER") {
+  if (user.role === "CONSUMER") {
     redirect("/");
   }
 

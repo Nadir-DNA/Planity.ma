@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { paginationSchema } from "@/lib/validations";
 import { generateBookingReference } from "@/lib/utils";
 import { sendBookingConfirmation, sendBookingCancellation } from "@/server/services/notification.service";
@@ -71,8 +71,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     // Verify authentication
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getUser();
+    if (!user?.id) {
       return NextResponse.json(
         { error: "Authentification requise" },
         { status: 401 }
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     const { salonId, services, date, time, notes } = body;
 
     // Use authenticated user's ID — never trust client-sent userId
-    const userId = session.user.id;
+    const userId = user.id;
 
     if (!salonId || !services?.length || !date || !time) {
       return NextResponse.json(
@@ -222,8 +222,8 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     // Check authentication
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getUser();
+    if (!user?.id) {
       return NextResponse.json(
         { error: "Non autorise" },
         { status: 401 }
@@ -245,8 +245,8 @@ export async function DELETE(request: Request) {
       where: {
         id: bookingId,
         OR: [
-          { userId: session.user.id },
-          { salon: { ownerId: session.user.id } },
+          { userId: user.id },
+          { salon: { ownerId: user.id } },
         ],
         status: { in: ["PENDING", "CONFIRMED"] },
       },

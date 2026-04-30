@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/shared/header";
 import { Footer } from "@/components/shared/footer";
@@ -8,14 +8,14 @@ export default async function AccountLayout({
 }: {
   children: React.ReactNode;
 }) {
-  let session;
+  let user;
   try {
-    session = await auth();
+    user = await getUser();
   } catch {
     redirect("/connexion");
   }
 
-  if (!session) {
+  if (!user) {
     redirect("/connexion");
   }
 

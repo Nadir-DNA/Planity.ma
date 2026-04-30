@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getUser();
+    if (!user?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
     const salon = await db.salon.findFirst({
-      where: { ownerId: session.user.id },
+      where: { ownerId: user.id },
     });
 
     if (!salon) {
@@ -72,13 +72,13 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getUser();
+    if (!user?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
     const salon = await db.salon.findFirst({
-      where: { ownerId: session.user.id },
+      where: { ownerId: user.id },
     });
 
     if (!salon) {

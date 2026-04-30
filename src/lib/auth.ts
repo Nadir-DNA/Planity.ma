@@ -1,81 +1,51 @@
-import NextAuth from "next-auth";
-import Credentials from "next-auth/providers/credentials";
-import * as bcrypt from "bcryptjs";
-import { db } from "./db";
+import { createClient } from "@/lib/supabase/server";
 
-// Extend NextAuth types - v5 style
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      role: "CONSUMER" | "PRO_OWNER" | "PRO_STAFF" | "ADMIN";
-      locale: string;
-      email: string;
-      name?: string | null;
-      image?: string | null;
-    };
-  }
+export type UserRole = "CONSUMER" | "PRO_OWNER" | "PRO_STAFF" | "ADMIN";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  name: string | null;
+  locale: string;
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  // No adapter — using JWT strategy with Credentials provider only.
-  // PrismaAdapter will be added back if/when Google OAuth is configured.
-  session: { strategy: "jwt" },
-  pages: {
-    signIn: "/connexion",
-    newUser: "/inscription",
-  },
-  providers: [
-    // Google provider will be added here when GOOGLE_CLIENT_ID/SECRET are configured
-    Credentials({
-      name: "credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Mot de passe", type: "password" },
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+/**
+ * Get the current authenticated user from the Supabase session.
+ * Returns null if no session exists.
+ * Use this in Server Components, Server Actions, and API routes.
+ */
+export async function getUser(): Promise<AuthUser | null> {
+  const supabase = await createClient();
+  const {
+    data: { user: supabaseUser },
+  } = await supabase.auth.getUser();
 
-        const user = await db.user.findUnique({
-          where: { email: credentials.email as string },
-        });
+  if (!supabaseUser) return null;
 
-        if (!user || !user.passwordHash) return null;
+  return {
+    id: supabaseUser.id,
+    email: supabaseUser.email ?? "",
+    role: (supabaseUser.user_metadata?.role as UserRole) ?? "CONSUMER",
+    name:
+      supabaseUser.user_metadata?.name ??
+      supabaseUser.user_metadata?.full_name ??
+      null,
+    locale: (supabaseUser.user_metadata?.locale as string) ?? "FR",
+  };
+}
 
-        const isValid = await bcrypt.compare(
-          credentials.password as string,
-          user.passwordHash,
-        );
+/**
+ * Backward-compatible wrapper that returns a session-like object
+ * matching the old NextAuth shape: { user: AuthUser } | null.
+ * Existing callers using `const session = await auth()` and `session?.user?.id`
+ * can keep working without changes.
+ */
+export async function auth(): Promise<{ user: AuthUser } | null> {
+  const user = await getUser();
+  if (!user) return null;
+  return { user };
+}
 
-        if (!isValid) return null;
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.avatar,
-          role: user.role,
-          locale: user.locale,
-        };
-      },
-    }),
-  ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        // Cast user to access custom properties
-        const u = user as unknown as { role?: string; locale?: string };
-        token.role = u.role ?? "CLIENT";
-        token.locale = u.locale ?? "FR";
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.sub!;
-        session.user.role = (token as unknown as { role?: string }).role as "CONSUMER" | "PRO_OWNER" | "PRO_STAFF" | "ADMIN";
-        session.user.locale = (token as unknown as { locale?: string }).locale as string;
-      }
-      return session;
-    },
-  },
+// Re-export createClient for callers that need direct Supabase access
+export { createClient };
