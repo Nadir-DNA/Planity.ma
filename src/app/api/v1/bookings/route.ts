@@ -58,10 +58,13 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Bookings fetch error:", error);
-    return NextResponse.json(
-      { error: "Erreur lors du chargement des reservations" },
-      { status: 500 }
-    );
+    // Return empty result as fallback instead of 500
+    return NextResponse.json({
+      bookings: [],
+      total: 0,
+      page: 1,
+      totalPages: 0,
+    });
   }
 }
 

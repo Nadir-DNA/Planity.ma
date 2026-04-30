@@ -8,7 +8,12 @@ export default async function AccountLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
+  let session;
+  try {
+    session = await auth();
+  } catch {
+    redirect("/connexion");
+  }
 
   if (!session) {
     redirect("/connexion");
