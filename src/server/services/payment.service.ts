@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { supabaseAdmin, findById, updateRow, insertRow, findByUnique } from "@/lib/supabase-helpers";
 import { initDodoPayment, processCashPayment as processDodoCashPayment, processCheckPayment as processDodoCheckPayment, processRefund as processDodoRefund } from "./dodo-payment.service";
 
 /**
@@ -76,10 +76,7 @@ export async function handleCmiCallback(params: {
   }
 
   // Find payment
-  const payment = await db.payment.findUnique({
-    where: { id: paymentId },
-    include: { booking: true },
-  });
+  const payment = await findById("Payment", paymentId);
 
   if (!payment) {
     return { success: false, error: "Paiement introuvable" };
@@ -87,19 +84,13 @@ export async function handleCmiCallback(params: {
 
   // Update payment status
   const newStatus = status === "00" ? "SUCCEEDED" : "FAILED";
-  await db.payment.update({
-    where: { id: paymentId },
-    data: { status: newStatus },
-  });
+  await updateRow("Payment", paymentId, { status: newStatus });
 
   // Update booking if payment succeeded
-  if (newStatus === "SUCCEEDED" && payment.booking && payment.bookingId) {
-    await db.booking.update({
-      where: { id: payment.bookingId },
-      data: {
-        status: "CONFIRMED",
-        depositPaid: true,
-      },
+  if (newStatus === "SUCCEEDED" && (payment as Record<string, unknown>).bookingId) {
+    await updateRow("Booking", (payment as Record<string, unknown>).bookingId as string, {
+      status: "CONFIRMED",
+      depositPaid: true,
     });
   }
 

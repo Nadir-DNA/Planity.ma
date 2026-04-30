@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 
 const VALID_NOTIFICATION_KEYS = [
   "notifyBookingConfirmed",
@@ -44,16 +44,17 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const dbUser = await db.user.update({
-      where: { id: authUser.id },
-      data: updateData,
-      select: {
-        id: true,
-        notifyBookingConfirmed: true,
-        notifyBookingReminder: true,
-        notifyMarketing: true,
-      },
-    });
+    const { data: dbUser, error: updateError } = await supabaseAdmin
+      .from("User")
+      .update(updateData)
+      .eq("id", authUser.id)
+      .select("id, notifyBookingConfirmed, notifyBookingReminder, notifyMarketing")
+      .single();
+
+    if (updateError) {
+      console.error("[PATCH /api/v1/user/notifications] Supabase error:", updateError);
+      return NextResponse.json({ error: "Erreur interne du serveur" }, { status: 500 });
+    }
 
     return NextResponse.json({ user: dbUser });
   } catch (error) {

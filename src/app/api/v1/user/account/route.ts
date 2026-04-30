@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function DELETE() {
   try {
@@ -10,12 +10,13 @@ export async function DELETE() {
     }
 
     // Verify user exists and is active
-    const dbUser = await db.user.findUnique({
-      where: { id: authUser.id },
-      select: { id: true, isActive: true },
-    });
+    const { data: dbUser, error } = await supabaseAdmin
+      .from("User")
+      .select("id, isActive")
+      .eq("id", authUser.id)
+      .single();
 
-    if (!dbUser) {
+    if (error || !dbUser) {
       return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
 
@@ -27,16 +28,21 @@ export async function DELETE() {
     }
 
     // Soft delete: set isActive to false
-    await db.user.update({
-      where: { id: dbUser.id },
-      data: {
+    const { error: updateError } = await supabaseAdmin
+      .from("User")
+      .update({
         isActive: false,
-        email: `deleted_${dbUser.id}_${Date.now()}@deleted.planity.ma`,
+        email: `deleted_${authUser.id}_${Date.now()}@deleted.planity.ma`,
         phone: null,
         name: "Compte supprimé",
         passwordHash: null,
-      },
-    });
+      })
+      .eq("id", dbUser.id);
+
+    if (updateError) {
+      console.error("[DELETE /api/v1/user/account] Supabase error:", updateError);
+      return NextResponse.json({ error: "Erreur interne du serveur" }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

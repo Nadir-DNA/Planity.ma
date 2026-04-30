@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { supabaseAdmin, updateRow, findMany } from "@/lib/supabase-helpers";
 import { sendBookingReminder } from "@/server/services/notification.service";
 
 /**
@@ -20,36 +20,38 @@ export async function runBookingReminders() {
   const reminder1hEnd = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
   // Find bookings needing 24h reminder
-  const bookings24h = await db.booking.findMany({
-    where: {
-      status: "CONFIRMED",
-      startTime: { gte: reminder24hStart, lte: reminder24hEnd },
-      reminder24hSent: false,
-    },
-    include: { user: true, salon: true },
-  });
+  const { data: bookings24h, error: err24h } = await supabaseAdmin
+    .from("Booking")
+    .select("*, user:User!userId(*), salon:Salon!salonId(*)")
+    .eq("status", "CONFIRMED")
+    .gte("startTime", reminder24hStart.toISOString())
+    .lte("startTime", reminder24hEnd.toISOString())
+    .eq("reminder24hSent", false);
+
+  if (err24h) console.error("[Reminders] Error fetching 24h bookings:", err24h);
 
   // Find bookings needing 1h reminder
-  const bookings1h = await db.booking.findMany({
-    where: {
-      status: "CONFIRMED",
-      startTime: { gte: reminder1hStart, lte: reminder1hEnd },
-      reminder1hSent: false,
-    },
-    include: { user: true, salon: true },
-  });
+  const { data: bookings1h, error: err1h } = await supabaseAdmin
+    .from("Booking")
+    .select("*, user:User!userId(*), salon:Salon!salonId(*)")
+    .eq("status", "CONFIRMED")
+    .gte("startTime", reminder1hStart.toISOString())
+    .lte("startTime", reminder1hEnd.toISOString())
+    .eq("reminder1hSent", false);
 
-  console.log(`[Reminders] Found ${bookings24h.length} bookings for 24h reminder`);
-  console.log(`[Reminders] Found ${bookings1h.length} bookings for 1h reminder`);
+  if (err1h) console.error("[Reminders] Error fetching 1h bookings:", err1h);
+
+  const b24 = bookings24h || [];
+  const b1 = bookings1h || [];
+
+  console.log(`[Reminders] Found ${b24.length} bookings for 24h reminder`);
+  console.log(`[Reminders] Found ${b1.length} bookings for 1h reminder`);
 
   // Send 24h reminders
-  for (const booking of bookings24h) {
+  for (const booking of b24) {
     try {
       await sendBookingReminder(booking.id);
-      await db.booking.update({
-        where: { id: booking.id },
-        data: { reminder24hSent: true },
-      });
+      await updateRow("Booking", booking.id, { reminder24hSent: true });
       console.log(`[Reminders] Sent 24h reminder for booking ${booking.reference}`);
     } catch (error) {
       console.error(`[Reminders] Failed to send 24h reminder for ${booking.reference}:`, error);
@@ -57,13 +59,10 @@ export async function runBookingReminders() {
   }
 
   // Send 1h reminders
-  for (const booking of bookings1h) {
+  for (const booking of b1) {
     try {
       await sendBookingReminder(booking.id);
-      await db.booking.update({
-        where: { id: booking.id },
-        data: { reminder1hSent: true },
-      });
+      await updateRow("Booking", booking.id, { reminder1hSent: true });
       console.log(`[Reminders] Sent 1h reminder for booking ${booking.reference}`);
     } catch (error) {
       console.error(`[Reminders] Failed to send 1h reminder for ${booking.reference}:`, error);
@@ -71,7 +70,7 @@ export async function runBookingReminders() {
   }
 
   return {
-    reminders24h: bookings24h.length,
-    reminders1h: bookings1h.length,
+    reminders24h: b24.length,
+    reminders1h: b1.length,
   };
 }

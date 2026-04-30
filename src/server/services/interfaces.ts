@@ -1,8 +1,7 @@
 /**
  * Service Interfaces for DI
+ * Uses plain types instead of Prisma-generated types
  */
-
-import type { Booking, Salon, Service, User, Notification, BookingItem } from "@prisma/client";
 
 // ============================================
 // Booking Service Interface
@@ -16,13 +15,13 @@ export interface IBookingService {
     date: string;
     time: string;
     notes?: string;
-  }): Promise<Booking & { items: BookingItem[] }>;
+  }): Promise<Record<string, unknown> & { items: Record<string, unknown>[] }>;
   
-  cancelBooking(bookingId: string, userId: string, reason?: string): Promise<Booking>;
+  cancelBooking(bookingId: string, userId: string, reason?: string): Promise<Record<string, unknown>>;
   
-  getUserBookings(userId: string, status?: string): Promise<Booking[]>;
+  getUserBookings(userId: string, status?: string): Promise<Record<string, unknown>[]>;
   
-  getSalonBookings(salonId: string, date?: string, staffId?: string): Promise<Booking[]>;
+  getSalonBookings(salonId: string, date?: string, staffId?: string): Promise<Record<string, unknown>[]>;
 }
 
 // ============================================
@@ -30,9 +29,9 @@ export interface IBookingService {
 // ============================================
 
 export interface ISalonService {
-  createSalon(input: CreateSalonInput, ownerId: string): Promise<Salon>;
+  createSalon(input: CreateSalonInput, ownerId: string): Promise<Record<string, unknown>>;
   
-  getSalonBySlug(slug: string): Promise<Salon | null>;
+  getSalonBySlug(slug: string): Promise<Record<string, unknown> | null>;
   
   searchSalons(params: {
     query?: string;
@@ -40,7 +39,7 @@ export interface ISalonService {
     category?: string;
     page?: number;
     limit?: number;
-  }): Promise<{ salons: Salon[]; total: number; page: number; totalPages: number }>;
+  }): Promise<{ salons: Record<string, unknown>[]; total: number; page: number; totalPages: number }>;
   
   updateSalonRating(salonId: string): Promise<void>;
 }
@@ -68,7 +67,7 @@ export interface INotificationService {
     title: string;
     body: string;
     data?: Record<string, unknown>;
-  }): Promise<Notification>;
+  }): Promise<Record<string, unknown>>;
   
   sendBookingConfirmation(bookingId: string): Promise<void>;
   

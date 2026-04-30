@@ -7,7 +7,7 @@ import type {
   BookingItem,
   Review,
   Payment,
-} from "@prisma/client";
+} from "@/lib/db-types";
 
 // Extended types with relations
 export type SalonWithDetails = Salon & {

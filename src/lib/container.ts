@@ -1,12 +1,12 @@
-
 /**
  * Dependency Injection Container
  * Central factory for all services and repositories
+ * Uses Supabase Admin REST API instead of Prisma
  */
 
+import { supabaseAdmin, findById, findByUnique, findMany, findFirst, insertRow, updateRow, countRows } from "@/lib/supabase-helpers";
 import { createSalonRepository, createBookingRepository } from "@/repositories";
 import { SalonController, BookingController } from "@/controllers";
-import { db } from "@/lib/db";
 
 // ============================================================
 // REPOSITORY IMPLEMENTATIONS (inline for missing ones)
@@ -14,35 +14,59 @@ import { db } from "@/lib/db";
 
 function createServiceRepository() {
   return {
-    findById: async (id: string) => db.service.findUnique({ where: { id } }),
-    findManyByIds: async (ids: string[], salonId: string) =>
-      db.service.findMany({ where: { id: { in: ids }, salonId } }),
-    findBySalon: async (salonId: string, activeOnly?: boolean) =>
-      db.service.findMany({
-        where: { salonId, isActive: activeOnly ? true : undefined },
-      }),
-    create: async (data: any) => db.service.create({ data }),
+    findById: async (id: string) => findById("Service", id),
+    findManyByIds: async (ids: string[], salonId: string) => {
+      const { data, error } = await supabaseAdmin
+        .from("Service")
+        .select("*")
+        .in("id", ids)
+        .eq("salonId", salonId);
+      if (error) throw new Error(`findManyByIds: ${error.message}`);
+      return data || [];
+    },
+    findBySalon: async (salonId: string, activeOnly?: boolean) => {
+      let query = supabaseAdmin
+        .from("Service")
+        .select("*")
+        .eq("salonId", salonId);
+      if (activeOnly) query = query.eq("isActive", true);
+      const { data, error } = await query;
+      if (error) throw new Error(`findBySalon: ${error.message}`);
+      return data || [];
+    },
+    create: async (data: Record<string, unknown>) => insertRow("Service", data),
   };
 }
 
 function createReviewRepository() {
   return {
-    findById: async (id: string) => db.review.findUnique({ where: { id } }),
-    findBySalon: async (salonId: string, approvedOnly?: boolean) =>
-      db.review.findMany({
-        where: { salonId, status: approvedOnly ? "APPROVED" : undefined },
-      }),
-    findByUser: async (userId: string) => db.review.findMany({ where: { userId } }),
-    create: async (data: any) => db.review.create({ data }),
-    updateStatus: async (id: string, status: string) =>
-      db.review.update({ where: { id }, data: { status: status as any } }),
+    findById: async (id: string) => findById("Review", id),
+    findBySalon: async (salonId: string, approvedOnly?: boolean) => {
+      let query = supabaseAdmin
+        .from("Review")
+        .select("*")
+        .eq("salonId", salonId);
+      if (approvedOnly) query = query.eq("status", "APPROVED");
+      const { data, error } = await query;
+      if (error) throw new Error(`findBySalon reviews: ${error.message}`);
+      return data || [];
+    },
+    findByUser: async (userId: string) => findMany("Review", { filters: { userId } }),
+    create: async (data: Record<string, unknown>) => insertRow("Review", data),
+    updateStatus: async (id: string, status: string) => updateRow("Review", id, { status }),
     aggregateRating: async (salonId: string) => {
-      const result = await db.review.aggregate({
-        where: { salonId, status: "APPROVED" },
-        _avg: { overallRating: true },
-        _count: true,
-      });
-      return { avg: result._avg.overallRating || 0, count: result._count };
+      const { data: reviews, error } = await supabaseAdmin
+        .from("Review")
+        .select("overallRating")
+        .eq("salonId", salonId)
+        .eq("status", "APPROVED");
+
+      if (error) throw new Error(`aggregateRating: ${error.message}`);
+      const count = reviews?.length ?? 0;
+      const avg = count > 0
+        ? reviews!.reduce((sum: number, r: { overallRating: number }) => sum + r.overallRating, 0) / count
+        : 0;
+      return { avg, count };
     },
   };
 }
@@ -82,8 +106,8 @@ function createAppContainer(): AppContainer {
       review: reviewRepo,
     },
     controllers: {
-      salon: new SalonController({ salonRepo, reviewRepo }),
-      booking: new BookingController({ bookingRepo, salonRepo, serviceRepo }),
+      salon: new SalonController({ salonRepo: salonRepo as any, reviewRepo: reviewRepo as any }),
+      booking: new BookingController({ bookingRepo: bookingRepo as any, salonRepo: salonRepo as any, serviceRepo: serviceRepo as any }),
     },
   };
 }
@@ -123,8 +147,8 @@ export function createTestContainer(mocks?: Partial<AppContainer["repositories"]
       review: reviewRepo,
     },
     controllers: {
-      salon: new SalonController({ salonRepo, reviewRepo }),
-      booking: new BookingController({ bookingRepo, salonRepo, serviceRepo }),
+      salon: new SalonController({ salonRepo: salonRepo as any, reviewRepo: reviewRepo as any }),
+      booking: new BookingController({ bookingRepo: bookingRepo as any, salonRepo: salonRepo as any, serviceRepo: serviceRepo as any }),
     },
   };
 }

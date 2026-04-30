@@ -1,6 +1,6 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { findByUnique, insertRow } from "@/lib/supabase-helpers";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -22,9 +22,7 @@ export async function registerUser(formData: FormData) {
   });
 
   // Check existing user
-  const existingUser = await db.user.findUnique({
-    where: { email: data.email },
-  });
+  const existingUser = await findByUnique("User", "email", data.email);
 
   if (existingUser) {
     return { error: "Un compte avec cet email existe deja" };
@@ -32,17 +30,15 @@ export async function registerUser(formData: FormData) {
 
   const passwordHash = await bcrypt.hash(data.password, 12);
 
-  const user = await db.user.create({
-    data: {
-      firstName: data.firstName,
-      lastName: data.lastName,
-      name: `${data.firstName} ${data.lastName}`,
-      email: data.email,
-      phone: data.phone || null,
-      passwordHash,
-      role: "CONSUMER",
-    },
+  const user = await insertRow("User", {
+    firstName: data.firstName,
+    lastName: data.lastName,
+    name: `${data.firstName} ${data.lastName}`,
+    email: data.email,
+    phone: data.phone || null,
+    passwordHash,
+    role: "CONSUMER",
   });
 
-  return { success: true, userId: user.id };
+  return { success: true, userId: (user as Record<string, unknown>).id };
 }

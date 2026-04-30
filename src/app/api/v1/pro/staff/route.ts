@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -11,29 +11,32 @@ export async function GET() {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon, error: salonError } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
-    if (!salon) {
+    if (salonError || !salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
 
-    const staff = await db.staffMember.findMany({
-      where: { salonId: salon.id },
-      orderBy: { order: "asc" },
-      include: {
-        schedules: { orderBy: { dayOfWeek: "asc" } },
-        services: {
-          select: {
-            serviceId: true,
-            service: { select: { id: true, name: true } },
-          },
-        },
-      },
-    });
+    const { data: staff, error: staffError } = await supabaseAdmin
+      .from("StaffMember")
+      .select("*, schedules:StaffSchedule(*), services:StaffService(serviceId, service:Service(id, name))")
+      .eq("salonId", salon.id)
+      .order("order", { ascending: true });
 
-    return NextResponse.json({ staff });
+    if (staffError) {
+      console.error("Staff fetch error:", staffError);
+      return NextResponse.json(
+        { error: "Erreur lors du chargement de l'équipe" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ staff: staff || [] });
   } catch (error) {
     console.error("Staff fetch error:", error);
     return NextResponse.json(
@@ -50,9 +53,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
     if (!salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
@@ -68,46 +74,62 @@ export async function POST(request: Request) {
       );
     }
 
-    const maxOrder = await db.staffMember.findFirst({
-      where: { salonId: salon.id },
-      orderBy: { order: "desc" },
-      select: { order: true },
-    });
+    // Get max order
+    const { data: maxOrderStaff } = await supabaseAdmin
+      .from("StaffMember")
+      .select("order")
+      .eq("salonId", salon.id)
+      .order("order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    const staffMember = await db.staffMember.create({
-      data: {
+    const nextOrder = (maxOrderStaff?.order ?? -1) + 1;
+
+    // Create staff member
+    const { data: staffMember, error: createError } = await supabaseAdmin
+      .from("StaffMember")
+      .insert({
         salonId: salon.id,
         displayName,
         title: title || null,
         bio: bio || null,
         color: color || "#3B82F6",
         isActive: isActive ?? true,
-        order: (maxOrder?.order ?? -1) + 1,
-        ...(schedules?.length && {
-          schedules: {
-            create: schedules.map(
-              (s: { dayOfWeek: number; startTime: string; endTime: string; isWorking: boolean }) => ({
-                dayOfWeek: s.dayOfWeek,
-                startTime: s.startTime,
-                endTime: s.endTime,
-                isWorking: s.isWorking,
-              })
-            ),
-          },
-        }),
-      },
-      include: {
-        schedules: { orderBy: { dayOfWeek: "asc" } },
-        services: {
-          select: {
-            serviceId: true,
-            service: { select: { id: true, name: true } },
-          },
-        },
-      },
-    });
+        order: nextOrder,
+      })
+      .select()
+      .single();
 
-    return NextResponse.json({ staff: staffMember }, { status: 201 });
+    if (createError) {
+      console.error("Staff creation error:", createError);
+      return NextResponse.json(
+        { error: "Erreur lors de la création du membre" },
+        { status: 500 }
+      );
+    }
+
+    // Create schedules if provided
+    if (schedules?.length) {
+      const scheduleData = schedules.map(
+        (s: { dayOfWeek: number; startTime: string; endTime: string; isWorking: boolean }) => ({
+          staffId: staffMember.id,
+          dayOfWeek: s.dayOfWeek,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          isWorking: s.isWorking,
+        })
+      );
+      await supabaseAdmin.from("StaffSchedule").insert(scheduleData);
+    }
+
+    // Re-fetch with relations
+    const { data: fullStaff } = await supabaseAdmin
+      .from("StaffMember")
+      .select("*, schedules:StaffSchedule(*), services:StaffService(serviceId, service:Service(id, name))")
+      .eq("id", staffMember.id)
+      .single();
+
+    return NextResponse.json({ staff: fullStaff || staffMember }, { status: 201 });
   } catch (error) {
     console.error("Staff creation error:", error);
     return NextResponse.json(

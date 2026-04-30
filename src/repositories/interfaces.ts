@@ -1,26 +1,22 @@
 /**
  * Repository Interfaces for DI
+ * Uses plain types instead of Prisma-generated types
  */
-
-import type { 
-  Booking, BookingItem, Salon, Service, StaffMember, User, 
-  Review, Notification, OpeningHours, SalonPhoto 
-} from "@prisma/client";
 
 // ============================================
 // Booking Repository Interface
 // ============================================
 
 export interface IBookingRepository {
-  findById(id: string): Promise<Booking | null>;
+  findById(id: string): Promise<Record<string, unknown> | null>;
   
-  findByReference(reference: string): Promise<Booking | null>;
+  findByReference(reference: string): Promise<Record<string, unknown> | null>;
   
-  findByUserId(userId: string, status?: string): Promise<Booking[]>;
+  findByUserId(userId: string, status?: string): Promise<Record<string, unknown>[]>;
   
-  findBySalon(salonId: string, date?: string, staffId?: string): Promise<Booking[]>;
+  findBySalon(salonId: string, date?: string, staffId?: string): Promise<Record<string, unknown>[]>;
   
-  findCancellable(bookingId: string, userId: string): Promise<Booking | null>;
+  findCancellable(bookingId: string, userId: string): Promise<Record<string, unknown> | null>;
   
   createBookingWithItems(params: {
     reference: string;
@@ -41,14 +37,14 @@ export interface IBookingRepository {
     }>;
     services: Array<{ serviceId: string; staffId?: string }>;
     endTimeCheck: Date;
-  }): Promise<Booking & { items: BookingItem[] }>;
+  }): Promise<Record<string, unknown>>;
   
   updateStatus(bookingId: string, data: {
     status: string;
     cancellationReason?: string;
     cancelledAt?: Date;
     cancelledBy?: string;
-  }): Promise<Booking>;
+  }): Promise<Record<string, unknown>>;
   
   checkConflict(staffId: string, startTime: Date, endTime: Date): Promise<boolean>;
 }
@@ -58,9 +54,9 @@ export interface IBookingRepository {
 // ============================================
 
 export interface ISalonRepository {
-  findById(id: string): Promise<Salon | null>;
+  findById(id: string): Promise<Record<string, unknown> | null>;
   
-  findBySlug(slug: string): Promise<Salon | null>;
+  findBySlug(slug: string): Promise<Record<string, unknown> | null>;
   
   search(params: {
     query?: string;
@@ -70,7 +66,7 @@ export interface ISalonRepository {
     limit?: number;
     isActive?: boolean;
     isVerified?: boolean;
-  }): Promise<{ salons: Salon[]; total: number }>;
+  }): Promise<{ salons: Record<string, unknown>[]; total: number }>;
   
   create(data: {
     name: string;
@@ -84,11 +80,11 @@ export interface ISalonRepository {
     description?: string;
     ownerId: string;
     isActive?: boolean;
-  }): Promise<Salon>;
+  }): Promise<Record<string, unknown>>;
   
   updateRating(salonId: string, averageRating: number, reviewCount: number): Promise<void>;
   
-  findByOwner(ownerId: string): Promise<Salon[]>;
+  findByOwner(ownerId: string): Promise<Record<string, unknown>[]>;
 }
 
 // ============================================
@@ -96,11 +92,11 @@ export interface ISalonRepository {
 // ============================================
 
 export interface IServiceRepository {
-  findById(id: string): Promise<Service | null>;
+  findById(id: string): Promise<Record<string, unknown> | null>;
   
-  findManyByIds(ids: string[], salonId: string): Promise<Service[]>;
+  findManyByIds(ids: string[], salonId: string): Promise<Record<string, unknown>[]>;
   
-  findBySalon(salonId: string, activeOnly?: boolean): Promise<Service[]>;
+  findBySalon(salonId: string, activeOnly?: boolean): Promise<Record<string, unknown>[]>;
   
   create(data: {
     salonId: string;
@@ -109,7 +105,7 @@ export interface IServiceRepository {
     price: number;
     duration: number;
     categoryId?: string;
-  }): Promise<Service>;
+  }): Promise<Record<string, unknown>>;
 }
 
 // ============================================
@@ -117,20 +113,20 @@ export interface IServiceRepository {
 // ============================================
 
 export interface IUserRepository {
-  findById(id: string): Promise<User | null>;
+  findById(id: string): Promise<Record<string, unknown> | null>;
   
-  findByEmail(email: string): Promise<User | null>;
+  findByEmail(email: string): Promise<Record<string, unknown> | null>;
   
-  findByPhone(phone: string): Promise<User | null>;
+  findByPhone(phone: string): Promise<Record<string, unknown> | null>;
   
   create(data: {
     name?: string;
     email: string;
     phone?: string;
     passwordHash?: string;
-  }): Promise<User>;
+  }): Promise<Record<string, unknown>>;
   
-  update(id: string, data: Partial<User>): Promise<User>;
+  update(id: string, data: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
 // ============================================
@@ -146,11 +142,11 @@ export interface INotificationRepository {
     body: string;
     data?: Record<string, unknown>;
     status: string;
-  }): Promise<Notification>;
+  }): Promise<Record<string, unknown>>;
   
-  updateStatus(id: string, status: string, sentAt?: Date): Promise<Notification>;
+  updateStatus(id: string, status: string, sentAt?: Date): Promise<Record<string, unknown>>;
   
-  findByUser(userId: string, limit?: number): Promise<Notification[]>;
+  findByUser(userId: string, limit?: number): Promise<Record<string, unknown>[]>;
 }
 
 // ============================================
@@ -158,11 +154,11 @@ export interface INotificationRepository {
 // ============================================
 
 export interface IReviewRepository {
-  findById(id: string): Promise<Review | null>;
+  findById(id: string): Promise<Record<string, unknown> | null>;
   
-  findBySalon(salonId: string, approvedOnly?: boolean): Promise<Review[]>;
+  findBySalon(salonId: string, approvedOnly?: boolean): Promise<Record<string, unknown>[]>;
   
-  findByUser(userId: string): Promise<Review[]>;
+  findByUser(userId: string): Promise<Record<string, unknown>[]>;
   
   create(data: {
     salonId: string;
@@ -173,9 +169,9 @@ export interface IReviewRepository {
     atmosphereRating?: number;
     cleanlinessRating?: number;
     comment?: string;
-  }): Promise<Review>;
+  }): Promise<Record<string, unknown>>;
   
-  updateStatus(id: string, status: string): Promise<Review>;
+  updateStatus(id: string, status: string): Promise<Record<string, unknown>>;
   
   aggregateRating(salonId: string): Promise<{ avg: number; count: number }>;
 }

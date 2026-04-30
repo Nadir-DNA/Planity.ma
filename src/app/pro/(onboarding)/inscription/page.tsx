@@ -158,7 +158,7 @@ export default function ProRegistrationPage() {
         });
 
         if ("error" in result) {
-          setError(result.error);
+          setError(result.error ?? "Une erreur est survenue");
           return;
         }
 

@@ -1,6 +1,6 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { supabaseAdmin, findByUnique, findFirst } from "@/lib/supabase-helpers";
 import { getUser } from "@/lib/auth";
 import { generateBookingReference } from "@/lib/utils";
 import { createBookingSchema, type CreateBookingInput } from "@/server/validators/booking.schema";
@@ -16,16 +16,20 @@ export async function createBooking(input: CreateBookingInput) {
 
   // Fetch services to calculate total price and duration
   const serviceIds = data.services.map((s) => s.serviceId);
-  const services = await db.service.findMany({
-    where: { id: { in: serviceIds }, salonId: data.salonId },
-  });
+  const { data: services, error: svcError } = await supabaseAdmin
+    .from("Service")
+    .select("*")
+    .in("id", serviceIds)
+    .eq("salonId", data.salonId);
 
-  if (services.length !== serviceIds.length) {
+  if (svcError) throw new Error(`createBooking fetchServices: ${svcError.message}`);
+
+  if (!services || services.length !== serviceIds.length) {
     return { error: "Un ou plusieurs services sont invalides" };
   }
 
-  const totalPrice = services.reduce((sum, s) => sum + s.price, 0);
-  const totalDuration = services.reduce((sum, s) => sum + s.duration, 0);
+  const totalPrice = services.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
+  const totalDuration = services.reduce((sum: number, s: { duration: number }) => sum + s.duration, 0);
 
   // Parse start time
   const [year, month, day] = data.date.split("-").map(Number);
@@ -40,28 +44,39 @@ export async function createBooking(input: CreateBookingInput) {
       if (svc.staffId) return { serviceId: svc.serviceId, staffId: svc.staffId };
 
       // No staff preference — find first active staff member assigned to this service
-      const assignedStaff = await db.staffMember.findFirst({
-        where: {
-          isActive: true,
-          salonId: data.salonId,
-          services: { some: { serviceId: svc.serviceId } },
-        },
-      });
+      const { data: staffServiceRows } = await supabaseAdmin
+        .from("StaffService")
+        .select("staffId")
+        .eq("serviceId", svc.serviceId);
 
-      if (assignedStaff) {
-        return { serviceId: svc.serviceId, staffId: assignedStaff.id };
+      const staffIds = (staffServiceRows || []).map((ss: { staffId: string }) => ss.staffId);
+
+      if (staffIds.length > 0) {
+        const { data: assignedStaff } = await supabaseAdmin
+          .from("StaffMember")
+          .select("id")
+          .eq("isActive", true)
+          .in("id", staffIds)
+          .limit(1);
+
+        if (assignedStaff && assignedStaff.length > 0) {
+          return { serviceId: svc.serviceId, staffId: assignedStaff[0].id };
+        }
       }
 
       // Fallback: any active staff member in the salon
-      const salonStaff = await db.staffMember.findFirst({
-        where: { salonId: data.salonId, isActive: true },
-      });
+      const { data: salonStaff } = await supabaseAdmin
+        .from("StaffMember")
+        .select("id")
+        .eq("salonId", data.salonId)
+        .eq("isActive", true)
+        .limit(1);
 
-      if (!salonStaff) {
+      if (!salonStaff || salonStaff.length === 0) {
         throw new Error("Aucun professionnel disponible dans ce salon");
       }
 
-      return { serviceId: svc.serviceId, staffId: salonStaff.id };
+      return { serviceId: svc.serviceId, staffId: salonStaff[0].id };
     })
   );
 
@@ -70,65 +85,96 @@ export async function createBooking(input: CreateBookingInput) {
   let attempts = 0;
   do {
     reference = generateBookingReference();
-    const existing = await db.booking.findUnique({ where: { reference } });
+    const existing = await findByUnique("Booking", "reference", reference);
     if (!existing) break;
     attempts++;
   } while (attempts < 10);
 
-  // Create booking with items (in a transaction for atomicity)
-  const booking = await db.$transaction(async (tx) => {
-    // Double-check availability within transaction
-    for (const svc of resolvedServices) {
-      const conflicting = await tx.bookingItem.findFirst({
-        where: {
-          staffId: svc.staffId,
-          startTime: { lt: endTime },
-          endTime: { gt: startTime },
-          booking: { status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] } },
-        },
-      });
-      if (conflicting) {
-        throw new Error(
-          "Le creneau n'est plus disponible pour ce professionnel"
-        );
+  // Check for conflicts and create booking
+  // Note: Supabase doesn't have Prisma-style $transaction for multi-table atomicity
+  // We perform sequential operations with conflict checks
+
+  // Check for conflicts on each booking item
+  for (const svc of resolvedServices) {
+    const { data: conflicting } = await supabaseAdmin
+      .from("BookingItem")
+      .select("id, bookingId")
+      .eq("staffId", svc.staffId)
+      .lt("startTime", endTime.toISOString())
+      .gt("endTime", startTime.toISOString());
+
+    if (conflicting && conflicting.length > 0) {
+      // Verify the parent bookings are in active status
+      const activeBookingIds = conflicting.map((ci: { bookingId: string }) => ci.bookingId);
+      if (activeBookingIds.length > 0) {
+        const { data: activeBookings } = await supabaseAdmin
+          .from("Booking")
+          .select("id")
+          .in("id", activeBookingIds)
+          .in("status", ["PENDING", "CONFIRMED", "IN_PROGRESS"]);
+
+        if (activeBookings && activeBookings.length > 0) {
+          throw new Error("Le creneau n'est plus disponible pour ce professionnel");
+        }
       }
     }
+  }
 
-    let itemStartTime = startTime;
-    const items = resolvedServices.map((svc) => {
-      const service = services.find((s) => s.id === svc.serviceId)!;
-      const itemEndTime = new Date(itemStartTime.getTime() + service.duration * 60000);
-      const item = {
-        serviceId: svc.serviceId,
-        staffId: svc.staffId,
-        startTime: new Date(itemStartTime),
-        endTime: itemEndTime,
-        price: service.price,
-      };
-      itemStartTime = itemEndTime;
-      return item;
-    });
+  // Create booking
+  const { data: newBooking, error: bookingError } = await supabaseAdmin
+    .from("Booking")
+    .insert({
+      reference: reference!,
+      userId: user.id,
+      salonId: data.salonId,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      totalPrice,
+      source: "ONLINE",
+      status: "CONFIRMED",
+      notes: data.notes || null,
+    })
+    .select("*")
+    .single();
 
-    const newBooking = await tx.booking.create({
-      data: {
-        reference: reference!,
-        userId: user.id,
-        salonId: data.salonId,
-        startTime,
-        endTime,
-        totalPrice,
-        source: "ONLINE",
-        status: "CONFIRMED",
-        notes: data.notes,
-        items: {
-          create: items,
-        },
-      },
-      include: { items: { include: { service: true, staff: true } } },
-    });
+  if (bookingError) throw new Error(`createBooking insert: ${bookingError.message}`);
 
-    return newBooking;
+  const bookingId = newBooking.id;
+
+  // Create booking items
+  let itemStartTime = startTime;
+  const items = resolvedServices.map((svc) => {
+    const service = services.find((s: { id: string }) => s.id === svc.serviceId)!;
+    const itemEndTime = new Date(itemStartTime.getTime() + (service as { duration: number }).duration * 60000);
+    const item = {
+      bookingId,
+      serviceId: svc.serviceId,
+      staffId: svc.staffId,
+      startTime: new Date(itemStartTime).toISOString(),
+      endTime: itemEndTime.toISOString(),
+      price: (service as { price: number }).price,
+    };
+    itemStartTime = itemEndTime;
+    return item;
   });
 
-  return { success: true, booking };
+  const { error: itemsError } = await supabaseAdmin
+    .from("BookingItem")
+    .insert(items);
+
+  if (itemsError) throw new Error(`createBooking insertItems: ${itemsError.message}`);
+
+  // Fetch full booking with relations
+  const { data: fullBooking, error: fetchError } = await supabaseAdmin
+    .from("Booking")
+    .select(`
+      *,
+      items:BookingItem(*, service:Service!serviceId(*), staff:StaffMember!staffId(*))
+    `)
+    .eq("id", bookingId)
+    .single();
+
+  if (fetchError) throw new Error(`createBooking fetchBooking: ${fetchError.message}`);
+
+  return { success: true, booking: fullBooking };
 }

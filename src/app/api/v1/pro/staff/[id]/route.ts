@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 
 export async function PATCH(
@@ -14,17 +14,22 @@ export async function PATCH(
 
     const { id } = await params;
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
     if (!salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
 
-    const existing = await db.staffMember.findUnique({
-      where: { id },
-    });
+    const { data: existing } = await supabaseAdmin
+      .from("StaffMember")
+      .select("id, salonId")
+      .eq("id", id)
+      .maybeSingle();
 
     if (!existing || existing.salonId !== salon.id) {
       return NextResponse.json({ error: "Membre non trouvé" }, { status: 404 });
@@ -35,43 +40,48 @@ export async function PATCH(
 
     // Update schedules if provided
     if (schedules !== undefined) {
-      await db.staffSchedule.deleteMany({
-        where: { staffId: id },
-      });
+      // Delete existing schedules
+      await supabaseAdmin
+        .from("StaffSchedule")
+        .delete()
+        .eq("staffId", id);
+
       if (schedules.length > 0) {
-        await db.staffSchedule.createMany({
-          data: schedules.map(
-            (s: { dayOfWeek: number; startTime: string; endTime: string; isWorking: boolean }) => ({
-              staffId: id,
-              dayOfWeek: s.dayOfWeek,
-              startTime: s.startTime,
-              endTime: s.endTime,
-              isWorking: s.isWorking,
-            })
-          ),
-        });
+        const scheduleData = schedules.map(
+          (s: { dayOfWeek: number; startTime: string; endTime: string; isWorking: boolean }) => ({
+            staffId: id,
+            dayOfWeek: s.dayOfWeek,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            isWorking: s.isWorking,
+          })
+        );
+        await supabaseAdmin.from("StaffSchedule").insert(scheduleData);
       }
     }
 
-    const staffMember = await db.staffMember.update({
-      where: { id },
-      data: {
-        ...(displayName !== undefined && { displayName }),
-        ...(title !== undefined && { title }),
-        ...(bio !== undefined && { bio }),
-        ...(color !== undefined && { color }),
-        ...(isActive !== undefined && { isActive }),
-      },
-      include: {
-        schedules: { orderBy: { dayOfWeek: "asc" } },
-        services: {
-          select: {
-            serviceId: true,
-            service: { select: { id: true, name: true } },
-          },
-        },
-      },
-    });
+    // Build update data
+    const updateData: Record<string, unknown> = {};
+    if (displayName !== undefined) updateData.displayName = displayName;
+    if (title !== undefined) updateData.title = title;
+    if (bio !== undefined) updateData.bio = bio;
+    if (color !== undefined) updateData.color = color;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    const { data: staffMember, error: updateError } = await supabaseAdmin
+      .from("StaffMember")
+      .update(updateData)
+      .eq("id", id)
+      .select("*, schedules:StaffSchedule(*), services:StaffService(serviceId, service:Service(id, name))")
+      .single();
+
+    if (updateError) {
+      console.error("Staff update error:", updateError);
+      return NextResponse.json(
+        { error: "Erreur lors de la modification du membre" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ staff: staffMember });
   } catch (error) {
@@ -95,25 +105,39 @@ export async function DELETE(
 
     const { id } = await params;
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
     if (!salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
 
-    const existing = await db.staffMember.findUnique({
-      where: { id },
-    });
+    const { data: existing } = await supabaseAdmin
+      .from("StaffMember")
+      .select("id, salonId")
+      .eq("id", id)
+      .maybeSingle();
 
     if (!existing || existing.salonId !== salon.id) {
       return NextResponse.json({ error: "Membre non trouvé" }, { status: 404 });
     }
 
-    await db.staffMember.delete({
-      where: { id },
-    });
+    const { error: deleteError } = await supabaseAdmin
+      .from("StaffMember")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      console.error("Staff delete error:", deleteError);
+      return NextResponse.json(
+        { error: "Erreur lors de la suppression du membre" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

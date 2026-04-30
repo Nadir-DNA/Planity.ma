@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 import { paginationSchema, apiValidation } from "@/lib/validations";
 import { z } from "zod";
@@ -36,45 +36,55 @@ export async function GET(request: Request) {
       );
     }
 
-    const [reviews, total] = await Promise.all([
-      db.review.findMany({
-        where: { salonId, status: "APPROVED" },
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: {
-          user: { select: { name: true, avatar: true } },
-        },
-      }),
-      db.review.count({ where: { salonId, status: "APPROVED" } }),
-    ]);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data: reviews, count: total, error: reviewsError } = await supabaseAdmin
+      .from("Review")
+      .select("*, user:User(name, avatar)", { count: "exact" })
+      .eq("salonId", salonId)
+      .eq("status", "APPROVED")
+      .order("createdAt", { ascending: false })
+      .range(from, to);
+
+    if (reviewsError) {
+      console.error("Reviews fetch Supabase error:", reviewsError);
+      return NextResponse.json(
+        { error: "Erreur lors du chargement des avis" },
+        { status: 500 }
+      );
+    }
 
     // Compute average ratings
-    const stats = await db.review.aggregate({
-      where: { salonId, status: "APPROVED" },
-      _avg: {
-        overallRating: true,
-        qualityRating: true,
-        timingRating: true,
-        receptionRating: true,
-        hygieneRating: true,
-      },
-      _count: true,
-    });
+    const { data: allReviews, error: statsError } = await supabaseAdmin
+      .from("Review")
+      .select("overallRating, qualityRating, timingRating, receptionRating, hygieneRating")
+      .eq("salonId", salonId)
+      .eq("status", "APPROVED");
+
+    if (statsError) {
+      console.error("Reviews stats Supabase error:", statsError);
+    }
+
+    const count = allReviews?.length || 0;
+    const avg = (field: string) => {
+      const vals = allReviews?.map((r: Record<string, unknown>) => r[field]).filter((v): v is number => v !== null) || [];
+      return vals.length > 0 ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : null;
+    };
 
     return NextResponse.json({
-      reviews,
+      reviews: reviews || [],
       stats: {
-        average: stats._avg.overallRating,
-        quality: stats._avg.qualityRating,
-        timing: stats._avg.timingRating,
-        reception: stats._avg.receptionRating,
-        hygiene: stats._avg.hygieneRating,
-        count: stats._count,
+        average: avg("overallRating"),
+        quality: avg("qualityRating"),
+        timing: avg("timingRating"),
+        reception: avg("receptionRating"),
+        hygiene: avg("hygieneRating"),
+        count,
       },
-      total,
+      total: total || 0,
       page,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil((total || 0) / limit),
     });
   } catch (error) {
     console.error("Reviews fetch error:", error);
@@ -110,9 +120,14 @@ export async function POST(request: Request) {
     const { bookingId, salonId, overallRating, qualityRating, timingRating, receptionRating, hygieneRating, comment } = validation.data;
 
     // Check booking exists and belongs to user
-    const booking = await db.booking.findFirst({
-      where: { id: bookingId, userId: user.id, salonId, status: "COMPLETED" },
-    });
+    const { data: booking } = await supabaseAdmin
+      .from("Booking")
+      .select("id")
+      .eq("id", bookingId)
+      .eq("userId", user.id)
+      .eq("salonId", salonId)
+      .eq("status", "COMPLETED")
+      .maybeSingle();
 
     if (!booking) {
       return NextResponse.json(
@@ -122,9 +137,11 @@ export async function POST(request: Request) {
     }
 
     // Check if review already exists
-    const existingReview = await db.review.findUnique({
-      where: { bookingId },
-    });
+    const { data: existingReview } = await supabaseAdmin
+      .from("Review")
+      .select("id")
+      .eq("bookingId", bookingId)
+      .maybeSingle();
 
     if (existingReview) {
       return NextResponse.json(
@@ -133,20 +150,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const review = await db.review.create({
-      data: {
+    const { data: review, error: createError } = await supabaseAdmin
+      .from("Review")
+      .insert({
         bookingId,
         userId: user.id,
         salonId,
         overallRating,
-        qualityRating,
-        timingRating,
-        receptionRating,
-        hygieneRating,
-        comment,
+        qualityRating: qualityRating || null,
+        timingRating: timingRating || null,
+        receptionRating: receptionRating || null,
+        hygieneRating: hygieneRating || null,
+        comment: comment || null,
         status: "PENDING",
-      },
-    });
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.error("Review creation Supabase error:", createError);
+      return NextResponse.json(
+        { error: "Erreur lors de la creation de l'avis" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ review }, { status: 201 });
   } catch (error) {

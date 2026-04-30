@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 
 export async function PATCH(
@@ -14,18 +14,23 @@ export async function PATCH(
 
     const { id } = await params;
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
     if (!salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
 
     // Verify service belongs to this salon
-    const existing = await db.service.findUnique({
-      where: { id },
-    });
+    const { data: existing } = await supabaseAdmin
+      .from("Service")
+      .select("id, salonId")
+      .eq("id", id)
+      .maybeSingle();
 
     if (!existing || existing.salonId !== salon.id) {
       return NextResponse.json({ error: "Service non trouvé" }, { status: 404 });
@@ -36,41 +41,46 @@ export async function PATCH(
 
     // Update staff assignments if provided
     if (assignedStaffIds !== undefined) {
-      await db.staffService.deleteMany({
-        where: { serviceId: id },
-      });
+      // Delete existing assignments
+      await supabaseAdmin
+        .from("StaffService")
+        .delete()
+        .eq("serviceId", id);
+
       if (assignedStaffIds.length > 0) {
-        await db.staffService.createMany({
-          data: assignedStaffIds.map((staffId: string) => ({
-            serviceId: id,
-            staffId,
-          })),
-        });
+        const staffAssignments = assignedStaffIds.map((staffId: string) => ({
+          serviceId: id,
+          staffId,
+        }));
+        await supabaseAdmin.from("StaffService").insert(staffAssignments);
       }
     }
 
-    const service = await db.service.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(price !== undefined && { price: parseFloat(price) }),
-        ...(duration !== undefined && { duration: parseInt(duration) }),
-        ...(description !== undefined && { description }),
-        ...(categoryId !== undefined && { categoryId }),
-        ...(isOnlineBookable !== undefined && { isOnlineBookable }),
-        ...(isActive !== undefined && { isActive }),
-        ...(bufferTime !== undefined && { bufferTime: parseInt(bufferTime) }),
-      },
-      include: {
-        category: { select: { name: true } },
-        assignedStaff: {
-          select: {
-            staffId: true,
-            staff: { select: { id: true, displayName: true, color: true } },
-          },
-        },
-      },
-    });
+    // Build update data
+    const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = name;
+    if (price !== undefined) updateData.price = parseFloat(price);
+    if (duration !== undefined) updateData.duration = parseInt(duration);
+    if (description !== undefined) updateData.description = description;
+    if (categoryId !== undefined) updateData.categoryId = categoryId;
+    if (isOnlineBookable !== undefined) updateData.isOnlineBookable = isOnlineBookable;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (bufferTime !== undefined) updateData.bufferTime = parseInt(bufferTime);
+
+    const { data: service, error: updateError } = await supabaseAdmin
+      .from("Service")
+      .update(updateData)
+      .eq("id", id)
+      .select("*, category:ServiceCategory(name), assignedStaff:StaffService(staffId, staff:StaffMember(id, displayName, color))")
+      .single();
+
+    if (updateError) {
+      console.error("Service update error:", updateError);
+      return NextResponse.json(
+        { error: "Erreur lors de la modification du service" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ service });
   } catch (error) {
@@ -94,25 +104,39 @@ export async function DELETE(
 
     const { id } = await params;
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
     if (!salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
 
-    const existing = await db.service.findUnique({
-      where: { id },
-    });
+    const { data: existing } = await supabaseAdmin
+      .from("Service")
+      .select("id, salonId")
+      .eq("id", id)
+      .maybeSingle();
 
     if (!existing || existing.salonId !== salon.id) {
       return NextResponse.json({ error: "Service non trouvé" }, { status: 404 });
     }
 
-    await db.service.delete({
-      where: { id },
-    });
+    const { error: deleteError } = await supabaseAdmin
+      .from("Service")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      console.error("Service delete error:", deleteError);
+      return NextResponse.json(
+        { error: "Erreur lors de la suppression du service" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

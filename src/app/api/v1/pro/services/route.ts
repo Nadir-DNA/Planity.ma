@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -11,29 +11,32 @@ export async function GET() {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon, error: salonError } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
-    if (!salon) {
+    if (salonError || !salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
 
-    const services = await db.service.findMany({
-      where: { salonId: salon.id },
-      orderBy: { order: "asc" },
-      include: {
-        category: { select: { name: true } },
-        assignedStaff: {
-          select: {
-            staffId: true,
-            staff: { select: { id: true, displayName: true, color: true } },
-          },
-        },
-      },
-    });
+    const { data: services, error: svcError } = await supabaseAdmin
+      .from("Service")
+      .select("*, category:ServiceCategory(name), assignedStaff:StaffService(staffId, staff:StaffMember(id, displayName, color))")
+      .eq("salonId", salon.id)
+      .order("order", { ascending: true });
 
-    return NextResponse.json({ services });
+    if (svcError) {
+      console.error("Services fetch error:", svcError);
+      return NextResponse.json(
+        { error: "Erreur lors du chargement des services" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ services: services || [] });
   } catch (error) {
     console.error("Services fetch error:", error);
     return NextResponse.json(
@@ -50,9 +53,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
     if (!salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
@@ -68,14 +74,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const maxOrder = await db.service.findFirst({
-      where: { salonId: salon.id },
-      orderBy: { order: "desc" },
-      select: { order: true },
-    });
+    // Get max order
+    const { data: maxOrderService } = await supabaseAdmin
+      .from("Service")
+      .select("order")
+      .eq("salonId", salon.id)
+      .order("order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    const service = await db.service.create({
-      data: {
+    const nextOrder = (maxOrderService?.order ?? -1) + 1;
+
+    const { data: service, error: createError } = await supabaseAdmin
+      .from("Service")
+      .insert({
         salonId: salon.id,
         name,
         price: parseFloat(price),
@@ -85,27 +97,36 @@ export async function POST(request: Request) {
         isOnlineBookable: isOnlineBookable ?? true,
         isActive: isActive ?? true,
         bufferTime: bufferTime ? parseInt(bufferTime) : 0,
-        order: (maxOrder?.order ?? -1) + 1,
-        ...(assignedStaffIds?.length && {
-          assignedStaff: {
-            create: assignedStaffIds.map((staffId: string) => ({
-              staffId,
-            })),
-          },
-        }),
-      },
-      include: {
-        category: { select: { name: true } },
-        assignedStaff: {
-          select: {
-            staffId: true,
-            staff: { select: { id: true, displayName: true, color: true } },
-          },
-        },
-      },
-    });
+        order: nextOrder,
+      })
+      .select("*, category:ServiceCategory(name), assignedStaff:StaffService(staffId, staff:StaffMember(id, displayName, color))")
+      .single();
 
-    return NextResponse.json({ service }, { status: 201 });
+    if (createError) {
+      console.error("Service creation error:", createError);
+      return NextResponse.json(
+        { error: "Erreur lors de la création du service" },
+        { status: 500 }
+      );
+    }
+
+    // Create staff assignments if provided
+    if (assignedStaffIds?.length) {
+      const staffAssignments = assignedStaffIds.map((staffId: string) => ({
+        serviceId: service.id,
+        staffId,
+      }));
+      await supabaseAdmin.from("StaffService").insert(staffAssignments);
+    }
+
+    // Re-fetch with assignments
+    const { data: fullService } = await supabaseAdmin
+      .from("Service")
+      .select("*, category:ServiceCategory(name), assignedStaff:StaffService(staffId, staff:StaffMember(id, displayName, color))")
+      .eq("id", service.id)
+      .single();
+
+    return NextResponse.json({ service: fullService || service }, { status: 201 });
   } catch (error) {
     console.error("Service creation error:", error);
     return NextResponse.json(

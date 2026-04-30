@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 import { sendBookingCancellation } from "@/server/services/notification.service";
 
 // PATCH — Cancel a booking (set status to CANCELLED)
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getUser();
@@ -17,12 +17,16 @@ export async function PATCH(
       );
     }
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { cancellationReason } = body;
 
     // Fetch booking and verify ownership
-    const booking = await db.booking.findUnique({ where: { id } });
+    const { data: booking } = await supabaseAdmin
+      .from("Booking")
+      .select("id, userId, status")
+      .eq("id", id)
+      .single();
 
     if (!booking) {
       return NextResponse.json(
@@ -45,21 +49,25 @@ export async function PATCH(
       );
     }
 
-    const updated = await db.booking.update({
-      where: { id },
-      data: {
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from("Booking")
+      .update({
         status: "CANCELLED",
-        cancelledAt: new Date(),
+        cancelledAt: new Date().toISOString(),
         cancelledBy: user.id,
         cancellationReason: cancellationReason || null,
-      },
-      include: {
-        items: { include: { service: true, staff: true } },
-        salon: { select: { id: true, name: true, slug: true, city: true, address: true } },
-        user: { select: { id: true, name: true, email: true, phone: true } },
-        payment: true,
-      },
-    });
+      })
+      .eq("id", id)
+      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address), user:User(id, name, email, phone), payment:Payment(*)")
+      .single();
+
+    if (updateError) {
+      console.error("Booking cancel Supabase error:", updateError);
+      return NextResponse.json(
+        { error: "Erreur lors de l'annulation" },
+        { status: 500 }
+      );
+    }
 
     // Send cancellation notification (non-blocking)
     sendBookingCancellation(id).catch(console.error);
@@ -77,7 +85,7 @@ export async function PATCH(
 // PUT — Reschedule a booking (update startTime/endTime + BookingItem times)
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getUser();
@@ -88,7 +96,7 @@ export async function PUT(
       );
     }
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { startTime: newStartTime, endTime: newEndTime } = body;
 
@@ -117,10 +125,11 @@ export async function PUT(
     }
 
     // Fetch booking and verify ownership
-    const booking = await db.booking.findUnique({
-      where: { id },
-      include: { items: true },
-    });
+    const { data: booking } = await supabaseAdmin
+      .from("Booking")
+      .select("*, items:BookingItem(*)")
+      .eq("id", id)
+      .single();
 
     if (!booking) {
       return NextResponse.json(
@@ -144,7 +153,7 @@ export async function PUT(
     }
 
     // Calculate time shift
-    const originalDuration = booking.endTime.getTime() - booking.startTime.getTime();
+    const originalDuration = new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime();
     const newDuration = parsedEnd.getTime() - parsedStart.getTime();
 
     if (newDuration !== originalDuration) {
@@ -155,25 +164,31 @@ export async function PUT(
     }
 
     // Check availability for each booking item's staff at the new time
-    const timeShift = parsedStart.getTime() - booking.startTime.getTime();
+    const timeShift = parsedStart.getTime() - new Date(booking.startTime).getTime();
 
     for (const item of booking.items) {
-      const newStart = new Date(item.startTime.getTime() + timeShift);
-      const newEnd = new Date(item.endTime.getTime() + timeShift);
+      const newStart = new Date(new Date(item.startTime).getTime() + timeShift);
+      const newEnd = new Date(new Date(item.endTime).getTime() + timeShift);
 
-      const conflicting = await db.bookingItem.findFirst({
-        where: {
-          id: { not: item.id },
-          staffId: item.staffId,
-          startTime: { lt: newEnd },
-          endTime: { gt: newStart },
-          booking: {
-            status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] },
-          },
-        },
-      });
+      // Check for conflicting booking items for this staff at the new time
+      // We need bookings with status PENDING, CONFIRMED, or IN_PROGRESS
+      const { data: allItems } = await supabaseAdmin
+        .from("BookingItem")
+        .select("id, bookingId, booking:Booking(status)")
+        .eq("staffId", item.staffId)
+        .neq("id", item.id)
+        .lt("startTime", newEnd.toISOString())
+        .gt("endTime", newStart.toISOString());
 
-      if (conflicting) {
+      const hasConflict = allItems?.some(
+        (bi: Record<string, unknown>) => {
+          const booking = bi.booking as Record<string, unknown> | Record<string, unknown>[] | undefined;
+          const status = Array.isArray(booking) ? booking[0]?.status : booking?.status;
+          return ["PENDING", "CONFIRMED", "IN_PROGRESS"].includes(status as string);
+        }
+      );
+
+      if (hasConflict) {
         return NextResponse.json(
           { error: "Le créneau demandé n'est pas disponible" },
           { status: 409 }
@@ -181,37 +196,38 @@ export async function PUT(
       }
     }
 
-    // Update in a transaction
-    const updated = await db.$transaction(async (tx) => {
-      // Update each booking item's times
-      for (const item of booking.items) {
-        const newStart = new Date(item.startTime.getTime() + timeShift);
-        const newEnd = new Date(item.endTime.getTime() + timeShift);
+    // Update each booking item's times
+    for (const item of booking.items) {
+      const newStart = new Date(new Date(item.startTime).getTime() + timeShift);
+      const newEnd = new Date(new Date(item.endTime).getTime() + timeShift);
 
-        await tx.bookingItem.update({
-          where: { id: item.id },
-          data: {
-            startTime: newStart,
-            endTime: newEnd,
-          },
-        });
-      }
+      await supabaseAdmin
+        .from("BookingItem")
+        .update({
+          startTime: newStart.toISOString(),
+          endTime: newEnd.toISOString(),
+        })
+        .eq("id", item.id);
+    }
 
-      // Update the booking itself
-      return tx.booking.update({
-        where: { id },
-        data: {
-          startTime: parsedStart,
-          endTime: parsedEnd,
-        },
-        include: {
-          items: { include: { service: true, staff: true } },
-          salon: { select: { id: true, name: true, slug: true, city: true, address: true } },
-          user: { select: { id: true, name: true, email: true, phone: true } },
-          payment: true,
-        },
-      });
-    });
+    // Update the booking itself
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from("Booking")
+      .update({
+        startTime: parsedStart.toISOString(),
+        endTime: parsedEnd.toISOString(),
+      })
+      .eq("id", id)
+      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address), user:User(id, name, email, phone), payment:Payment(*)")
+      .single();
+
+    if (updateError) {
+      console.error("Booking reschedule Supabase error:", updateError);
+      return NextResponse.json(
+        { error: "Erreur lors du report" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ booking: updated });
   } catch (error) {

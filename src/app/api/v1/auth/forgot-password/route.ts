@@ -1,6 +1,5 @@
-
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { randomBytes } from "crypto";
 import { sendEmail, getPasswordResetEmailHtml } from "@/lib/email";
 
@@ -13,9 +12,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Find user
-    const user = await db.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
+    const { data: user } = await supabaseAdmin
+      .from("User")
+      .select("id, email, name")
+      .eq("email", email.toLowerCase())
+      .maybeSingle();
 
     // Don't reveal whether user exists
     if (!user) {
@@ -27,13 +28,18 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
     // Store token
-    await db.user.update({
-      where: { id: user.id },
-      data: {
+    const { error: updateError } = await supabaseAdmin
+      .from("User")
+      .update({
         verificationToken: resetToken,
-        verificationTokenExpires: expiresAt,
-      },
-    });
+        verificationTokenExpires: expiresAt.toISOString(),
+      })
+      .eq("id", user.id);
+
+    if (updateError) {
+      console.error("Forgot password token update error:", updateError);
+      return NextResponse.json({ error: "Une erreur est survenue" }, { status: 500 });
+    }
 
     // Send email with Resend
     const resetUrl = `${process.env.NEXTAUTH_URL || "https://planity.ma"}/reinitialiser-mot-de-passe?token=${resetToken}`;

@@ -1,8 +1,7 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { supabaseAdmin, findByUnique, insertRow, findFirst, deleteRow, updateRow } from "@/lib/supabase-helpers";
 import { slugify } from "@/lib/utils";
-import { SalonCategory } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -71,7 +70,7 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
   const d = parsed.data;
 
   // Check existing user
-  const existingUser = await db.user.findUnique({ where: { email: d.email } });
+  const existingUser = await findByUnique("User", "email", d.email);
   if (existingUser) {
     return { error: "Un compte avec cet email existe déjà" };
   }
@@ -81,11 +80,11 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
 
   // Generate unique slug
   let slug = slugify(d.salonName + " " + d.salonCity);
-  let existing = await db.salon.findUnique({ where: { slug } });
+  let existing = await findByUnique("Salon", "slug", slug);
   let counter = 1;
   while (existing) {
     slug = slugify(d.salonName + " " + d.salonCity + " " + counter);
-    existing = await db.salon.findUnique({ where: { slug } });
+    existing = await findByUnique("Salon", "slug", slug);
     counter++;
   }
 
@@ -94,132 +93,120 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     Lundi: 0, Mardi: 1, Mercredi: 2, Jeudi: 3, Vendredi: 4, Samedi: 5, Dimanche: 6,
   };
 
-  // Create everything in a transaction
-  const result = await db.$transaction(async (tx) => {
-    // 1. Create user
-    const user = await tx.user.create({
-      data: {
-        firstName: d.firstName,
-        lastName: d.lastName,
-        name: `${d.firstName} ${d.lastName}`,
-        email: d.email,
-        phone: d.phone || null,
-        passwordHash,
-        role: "PRO_OWNER",
-      },
+  // Create user
+  const user = await insertRow("User", {
+    firstName: d.firstName,
+    lastName: d.lastName,
+    name: `${d.firstName} ${d.lastName}`,
+    email: d.email,
+    phone: d.phone || null,
+    passwordHash,
+    role: "PRO_OWNER",
+  });
+
+  // Create salon
+  const salon = await insertRow("Salon", {
+    name: d.salonName,
+    slug,
+    category: d.salonCategory.toUpperCase().replace(/-/g, "_"),
+    address: d.salonAddress,
+    city: d.salonCity,
+    postalCode: d.salonPostalCode || null,
+    phone: d.salonPhone,
+    email: d.salonEmail || null,
+    description: d.salonDescription || null,
+    ownerId: (user as Record<string, unknown>).id as string,
+    isActive: false, // requires admin approval
+  });
+
+  const userId = (user as Record<string, unknown>).id as string;
+  const salonId = (salon as Record<string, unknown>).id as string;
+
+  // Create opening hours
+  for (const h of d.openingHours) {
+    if (h.isOpen) {
+      const dayNum = dayMap[h.day];
+      if (dayNum !== undefined) {
+        await insertRow("OpeningHours", {
+          salonId,
+          dayOfWeek: dayNum,
+          openTime: h.openTime,
+          closeTime: h.closeTime,
+          isClosed: false,
+        });
+      }
+    }
+  }
+
+  // Create staff members
+  const staffColors = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4"];
+  const createdStaff: { id: string; name: string; title?: string }[] = [];
+
+  for (let i = 0; i < d.staff.length; i++) {
+    const s = d.staff[i];
+    if (!s.name) continue;
+
+    const staffMember = await insertRow("StaffMember", {
+      salonId,
+      displayName: s.name,
+      title: s.title || null,
+      color: staffColors[i % staffColors.length],
+      isActive: true,
+      order: i,
     });
 
-    // 2. Create salon
-    const salon = await tx.salon.create({
-      data: {
-        name: d.salonName,
-        slug,
-        category: d.salonCategory.toUpperCase().replace(/-/g, "_") as SalonCategory,
-        address: d.salonAddress,
-        city: d.salonCity,
-        postalCode: d.salonPostalCode,
-        phone: d.salonPhone,
-        email: d.salonEmail,
-        description: d.salonDescription,
-        ownerId: user.id,
-        isActive: false, // requires admin approval
-      },
-    });
+    const staffId = (staffMember as Record<string, unknown>).id as string;
 
-    // 3. Create opening hours
+    // Create default schedule for each day (same as salon hours)
     for (const h of d.openingHours) {
       if (h.isOpen) {
         const dayNum = dayMap[h.day];
         if (dayNum !== undefined) {
-          await tx.openingHours.create({
-            data: {
-              salonId: salon.id,
-              dayOfWeek: dayNum,
-              openTime: h.openTime,
-              closeTime: h.closeTime,
-              isClosed: false,
-            },
+          await insertRow("StaffSchedule", {
+            staffId,
+            dayOfWeek: dayNum,
+            startTime: h.openTime,
+            endTime: h.closeTime,
+            isWorking: true,
           });
         }
       }
     }
 
-    // 4. Create staff members
-    const staffColors = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4"];
-    const createdStaff: { id: string; name: string; title?: string }[] = [];
+    createdStaff.push({ id: staffId, name: s.name, title: s.title });
+  }
 
-    for (let i = 0; i < d.staff.length; i++) {
-      const s = d.staff[i];
-      if (!s.name) continue;
+  // Create services
+  for (let i = 0; i < d.services.length; i++) {
+    const svc = d.services[i];
+    if (!svc.name || !svc.price || !svc.duration) continue;
 
-      const staffMember = await tx.staffMember.create({
-        data: {
-          salonId: salon.id,
-          displayName: s.name,
-          title: s.title || undefined,
-          color: staffColors[i % staffColors.length],
-          isActive: true,
-          order: i,
-        },
+    const price = parseFloat(svc.price);
+    const duration = parseInt(svc.duration);
+    if (isNaN(price) || isNaN(duration) || price <= 0 || duration <= 0) continue;
+
+    const service = await insertRow("Service", {
+      salonId,
+      name: svc.name,
+      price,
+      duration,
+      isActive: true,
+      isOnlineBookable: true,
+      order: i,
+    });
+
+    const serviceId = (service as Record<string, unknown>).id as string;
+
+    // Assign all staff to this service
+    for (const sm of createdStaff) {
+      await insertRow("StaffService", {
+        staffId: sm.id,
+        serviceId,
       });
-
-      // Create default schedule for each day (same as salon hours)
-      for (const h of d.openingHours) {
-        if (h.isOpen) {
-          const dayNum = dayMap[h.day];
-          if (dayNum !== undefined) {
-            await tx.staffSchedule.create({
-              data: {
-                staffId: staffMember.id,
-                dayOfWeek: dayNum,
-                startTime: h.openTime,
-                endTime: h.closeTime,
-                isWorking: true,
-              },
-            });
-          }
-        }
-      }
-
-      createdStaff.push({ id: staffMember.id, name: s.name, title: s.title });
     }
+  }
 
-    // 5. Create services
-    for (let i = 0; i < d.services.length; i++) {
-      const svc = d.services[i];
-      if (!svc.name || !svc.price || !svc.duration) continue;
-
-      const price = parseFloat(svc.price);
-      const duration = parseInt(svc.duration);
-      if (isNaN(price) || isNaN(duration) || price <= 0 || duration <= 0) continue;
-
-      const service = await tx.service.create({
-        data: {
-          salonId: salon.id,
-          name: svc.name,
-          price,
-          duration,
-          isActive: true,
-          isOnlineBookable: true,
-          order: i,
-        },
-      });
-
-      // Assign all staff to this service
-      for (const sm of createdStaff) {
-        await tx.staffService.create({
-          data: {
-            staffId: sm.id,
-            serviceId: service.id,
-          },
-        });
-      }
-    }
-
-    return { success: true, userId: user.id, salonId: salon.id, slug };
-  });
-
-  return result;
+  return { success: true, userId, salonId, slug };
 }
 
 // ============================================================
@@ -235,33 +222,29 @@ export async function createService(salonId: string, data: {
   isOnlineBookable?: boolean;
   staffIds?: string[];
 }) {
-  return db.$transaction(async (tx) => {
-    const service = await tx.service.create({
-      data: {
-        salonId,
-        name: data.name,
-        price: data.price,
-        duration: data.duration,
-        description: data.description,
-        categoryId: data.categoryId,
-        isOnlineBookable: data.isOnlineBookable ?? true,
-        isActive: true,
-      },
-    });
-
-    // Assign staff
-    if (data.staffIds?.length) {
-      await Promise.all(
-        data.staffIds.map((staffId) =>
-          tx.staffService.create({
-            data: { staffId, serviceId: service.id },
-          })
-        )
-      );
-    }
-
-    return service;
+  const service = await insertRow("Service", {
+    salonId,
+    name: data.name,
+    price: data.price,
+    duration: data.duration,
+    description: data.description || null,
+    categoryId: data.categoryId || null,
+    isOnlineBookable: data.isOnlineBookable ?? true,
+    isActive: true,
   });
+
+  const serviceId = (service as Record<string, unknown>).id as string;
+
+  // Assign staff
+  if (data.staffIds?.length) {
+    const rows = data.staffIds.map((staffId) => ({
+      staffId,
+      serviceId,
+    }));
+    await supabaseAdmin.from("StaffService").insert(rows);
+  }
+
+  return service;
 }
 
 export async function updateService(serviceId: string, data: {
@@ -274,34 +257,40 @@ export async function updateService(serviceId: string, data: {
   isActive?: boolean;
   staffIds?: string[];
 }) {
-  return db.$transaction(async (tx) => {
-    const { staffIds, ...updateData } = data;
-    await tx.service.update({
-      where: { id: serviceId },
-      data: updateData,
-    });
+  const { staffIds, ...updateData } = data;
 
-    // Update staff assignments
-    if (staffIds !== undefined) {
-      await tx.staffService.deleteMany({ where: { serviceId } });
-      await Promise.all(
-        staffIds.map((staffId) =>
-          tx.staffService.create({
-            data: { staffId, serviceId },
-          })
-        )
-      );
+  await updateRow("Service", serviceId, updateData);
+
+  // Update staff assignments
+  if (staffIds !== undefined) {
+    // Delete existing staff assignments
+    await supabaseAdmin
+      .from("StaffService")
+      .delete()
+      .eq("serviceId", serviceId);
+
+    // Insert new ones
+    if (staffIds.length > 0) {
+      const rows = staffIds.map((staffId) => ({
+        staffId,
+        serviceId,
+      }));
+      await supabaseAdmin.from("StaffService").insert(rows);
     }
+  }
 
-    return tx.service.findUnique({
-      where: { id: serviceId },
-      include: { assignedStaff: { include: { staff: true } } },
-    });
-  });
+  const { data: updated, error } = await supabaseAdmin
+    .from("Service")
+    .select("*, assignedStaff:StaffService(*, staff:StaffMember!staffId(*))")
+    .eq("id", serviceId)
+    .single();
+
+  if (error) throw new Error(`updateService: ${error.message}`);
+  return updated;
 }
 
 export async function deleteService(serviceId: string) {
-  return db.service.delete({ where: { id: serviceId } });
+  return deleteRow("Service", serviceId);
 }
 
 export async function createStaffMember(salonId: string, data: {
@@ -312,36 +301,31 @@ export async function createStaffMember(salonId: string, data: {
   userId?: string;
   schedules?: { dayOfWeek: number; startTime: string; endTime: string }[];
 }) {
-  return db.$transaction(async (tx) => {
-    const staff = await tx.staffMember.create({
-      data: {
-        salonId,
-        displayName: data.displayName,
-        title: data.title,
-        bio: data.bio,
-        color: data.color || "#3B82F6",
-        userId: data.userId,
-        isActive: true,
-      },
-    });
-
-    // Create schedules
-    if (data.schedules?.length) {
-      await Promise.all(
-        data.schedules.map((s) =>
-          tx.staffSchedule.create({
-            data: {
-              staffId: staff.id,
-              ...s,
-              isWorking: true,
-            },
-          })
-        )
-      );
-    }
-
-    return staff;
+  const staff = await insertRow("StaffMember", {
+    salonId,
+    displayName: data.displayName,
+    title: data.title || null,
+    bio: data.bio || null,
+    color: data.color || "#3B82F6",
+    userId: data.userId || null,
+    isActive: true,
   });
+
+  const staffId = (staff as Record<string, unknown>).id as string;
+
+  // Create schedules
+  if (data.schedules?.length) {
+    const rows = data.schedules.map((s) => ({
+      staffId,
+      dayOfWeek: s.dayOfWeek,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      isWorking: true,
+    }));
+    await supabaseAdmin.from("StaffSchedule").insert(rows);
+  }
+
+  return staff;
 }
 
 export async function updateStaffMember(staffId: string, data: {
@@ -352,36 +336,41 @@ export async function updateStaffMember(staffId: string, data: {
   isActive?: boolean;
   schedules?: { dayOfWeek: number; startTime: string; endTime: string }[];
 }) {
-  return db.$transaction(async (tx) => {
-    const { schedules, ...updateData } = data;
-    await tx.staffMember.update({
-      where: { id: staffId },
-      data: updateData,
-    });
+  const { schedules, ...updateData } = data;
 
-    // Update schedules
-    if (schedules !== undefined) {
-      await tx.staffSchedule.deleteMany({ where: { staffId } });
-      await Promise.all(
-        schedules.map((s) =>
-          tx.staffSchedule.create({
-            data: {
-              staffId,
-              ...s,
-              isWorking: true,
-            },
-          })
-        )
-      );
+  await updateRow("StaffMember", staffId, updateData);
+
+  // Update schedules
+  if (schedules !== undefined) {
+    // Delete existing schedules
+    await supabaseAdmin
+      .from("StaffSchedule")
+      .delete()
+      .eq("staffId", staffId);
+
+    // Insert new ones
+    if (schedules.length > 0) {
+      const rows = schedules.map((s) => ({
+        staffId,
+        dayOfWeek: s.dayOfWeek,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        isWorking: true,
+      }));
+      await supabaseAdmin.from("StaffSchedule").insert(rows);
     }
+  }
 
-    return tx.staffMember.findUnique({
-      where: { id: staffId },
-      include: { schedules: true },
-    });
-  });
+  const { data: updated, error } = await supabaseAdmin
+    .from("StaffMember")
+    .select("*, schedules:StaffSchedule(*)")
+    .eq("id", staffId)
+    .single();
+
+  if (error) throw new Error(`updateStaffMember: ${error.message}`);
+  return updated;
 }
 
 export async function deleteStaffMember(staffId: string) {
-  return db.staffMember.delete({ where: { id: staffId } });
+  return deleteRow("StaffMember", staffId);
 }

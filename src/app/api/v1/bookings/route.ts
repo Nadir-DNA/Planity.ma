@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 import { paginationSchema } from "@/lib/validations";
 import { generateBookingReference } from "@/lib/utils";
@@ -20,41 +20,34 @@ export async function GET(request: Request) {
       limit: searchParams.get("limit"),
     });
 
-    const where: Record<string, unknown> = {};
-    if (userId) where.userId = userId;
-    if (salonId) where.salonId = salonId;
-    if (status) where.status = status;
+    // Build Supabase query filters
+    let query = supabaseAdmin
+      .from("Booking")
+      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address), user:User(id, name, email, phone), payment:Payment(*)", { count: "exact" })
+      .order("startTime", { ascending: false })
+      .range((page - 1) * limit, (page - 1) * limit + limit - 1);
 
-    const [bookings, total] = await Promise.all([
-      db.booking.findMany({
-        where,
-        orderBy: { startTime: "desc" },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: {
-          items: {
-            include: {
-              service: true,
-              staff: true,
-            },
-          },
-          salon: {
-            select: { id: true, name: true, slug: true, city: true, address: true },
-          },
-          user: {
-            select: { id: true, name: true, email: true, phone: true },
-          },
-          payment: true,
-        },
-      }),
-      db.booking.count({ where }),
-    ]);
+    if (userId) query = query.eq("userId", userId);
+    if (salonId) query = query.eq("salonId", salonId);
+    if (status) query = query.eq("status", status);
+
+    const { data: bookings, count: total, error } = await query;
+
+    if (error) {
+      console.error("Bookings fetch Supabase error:", error);
+      return NextResponse.json({
+        bookings: [],
+        total: 0,
+        page: 1,
+        totalPages: 0,
+      });
+    }
 
     return NextResponse.json({
-      bookings,
-      total,
+      bookings: bookings || [],
+      total: total || 0,
       page,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil((total || 0) / limit),
     });
   } catch (error) {
     console.error("Bookings fetch error:", error);
@@ -94,11 +87,13 @@ export async function POST(request: Request) {
 
     // Fetch services
     const serviceIds = services.map((s: { serviceId: string }) => s.serviceId);
-    const dbServices = await db.service.findMany({
-      where: { id: { in: serviceIds }, salonId },
-    });
+    const { data: dbServices, error: svcError } = await supabaseAdmin
+      .from("Service")
+      .select("*")
+      .in("id", serviceIds)
+      .eq("salonId", salonId);
 
-    if (dbServices.length !== serviceIds.length) {
+    if (svcError || !dbServices || dbServices.length !== serviceIds.length) {
       return NextResponse.json(
         { error: "Un ou plusieurs services sont invalides" },
         { status: 400 }
@@ -119,22 +114,30 @@ export async function POST(request: Request) {
         if (svc.staffId) return svc;
 
         // No staff preference — find first active staff member assigned to this service
-        const assignedStaff = await db.staffMember.findFirst({
-          where: {
-            isActive: true,
-            salonId,
-            services: { some: { serviceId: svc.serviceId } },
-          },
+        const { data: assignedStaff } = await supabaseAdmin
+          .from("StaffService")
+          .select("staffId, staff:StaffMember(id, isActive)")
+          .eq("serviceId", svc.serviceId)
+          .limit(10);
+
+        const activeAssigned = assignedStaff?.find((as: Record<string, unknown>) => {
+          const staff = as.staff as Record<string, unknown> | Record<string, unknown>[] | undefined;
+          const isActive = Array.isArray(staff) ? staff[0]?.isActive : staff?.isActive;
+          return isActive === true;
         });
 
-        if (assignedStaff) {
-          return { ...svc, staffId: assignedStaff.id };
+        if (activeAssigned) {
+          return { ...svc, staffId: activeAssigned.staffId };
         }
 
         // Fallback: any active staff member in the salon
-        const salonStaff = await db.staffMember.findFirst({
-          where: { salonId, isActive: true },
-        });
+        const { data: salonStaff } = await supabaseAdmin
+          .from("StaffMember")
+          .select("id")
+          .eq("salonId", salonId)
+          .eq("isActive", true)
+          .limit(1)
+          .maybeSingle();
 
         if (!salonStaff) {
           throw new Error("Aucun professionnel disponible dans ce salon");
@@ -146,67 +149,111 @@ export async function POST(request: Request) {
 
     // Generate unique reference
     let reference = generateBookingReference();
-    let existing = await db.booking.findUnique({ where: { reference } });
+    let { data: existing } = await supabaseAdmin
+      .from("Booking")
+      .select("id")
+      .eq("reference", reference)
+      .maybeSingle();
     let attempts = 0;
     while (existing && attempts < 10) {
       reference = generateBookingReference();
-      existing = await db.booking.findUnique({ where: { reference } });
+      const { data: check } = await supabaseAdmin
+        .from("Booking")
+        .select("id")
+        .eq("reference", reference)
+        .maybeSingle();
+      existing = check;
       attempts++;
     }
 
-    // Create booking in transaction
-    const booking = await db.$transaction(async (tx) => {
-      // Check availability for each service/staff combo
-      for (const svc of resolvedServices) {
-        const conflicting = await tx.bookingItem.findFirst({
-          where: {
-            staffId: svc.staffId,
-            startTime: { lt: endTime },
-            endTime: { gt: startTime },
-            booking: {
-              status: { in: ["PENDING", "CONFIRMED", "IN_PROGRESS"] },
-            },
-          },
-        });
-        if (conflicting) {
-          throw new Error("Creneau non disponible pour ce professionnel");
+    // Check availability for each service/staff combo
+    for (const svc of resolvedServices) {
+      const { data: conflicting } = await supabaseAdmin
+        .from("BookingItem")
+        .select("id")
+        .eq("staffId", svc.staffId)
+        .lt("startTime", endTime.toISOString())
+        .gt("endTime", startTime.toISOString())
+        .in("booking.status", ["PENDING", "CONFIRMED", "IN_PROGRESS"]);
+
+      // Since Supabase doesn't easily join-filter on Booking status for BookingItem,
+      // we need to fetch items then filter manually
+      const { data: potentialConflicts } = await supabaseAdmin
+        .from("BookingItem")
+        .select("id, booking:Booking(status)")
+        .eq("staffId", svc.staffId)
+        .lt("startTime", endTime.toISOString())
+        .gt("endTime", startTime.toISOString());
+
+      const hasConflict = potentialConflicts?.some(
+        (item: Record<string, unknown>) => {
+          const booking = item.booking as Record<string, unknown> | Record<string, unknown>[] | undefined;
+          const status = Array.isArray(booking) ? booking[0]?.status : booking?.status;
+          return ["PENDING", "CONFIRMED", "IN_PROGRESS"].includes(status as string);
         }
+      );
+
+      if (hasConflict) {
+        return NextResponse.json(
+          { error: "Créneau non disponible pour ce professionnel" },
+          { status: 409 }
+        );
       }
+    }
 
-      let itemStartTime = startTime;
-      const items = resolvedServices.map((svc: { serviceId: string; staffId: string }) => {
-        const service = dbServices.find((s: { id: string }) => s.id === svc.serviceId)!;
-        const itemEndTime = new Date(itemStartTime.getTime() + service.duration * 60000);
-        const item = {
-          serviceId: svc.serviceId,
-          staffId: svc.staffId,
-          startTime: new Date(itemStartTime),
-          endTime: itemEndTime,
-          price: service.price,
-        };
-        itemStartTime = itemEndTime;
-        return item;
-      });
-
-      return tx.booking.create({
-        data: {
-          reference,
-          userId,
-          salonId,
-          startTime,
-          endTime,
-          totalPrice,
-          source: "ONLINE",
-          status: "CONFIRMED",
-          notes,
-          items: { create: items },
-        },
-        include: {
-          items: { include: { service: true, staff: true } },
-          salon: { select: { name: true, slug: true } },
-        },
-      });
+    // Create booking
+    let itemStartTime = startTime;
+    const items = resolvedServices.map((svc: { serviceId: string; staffId: string }) => {
+      const service = dbServices.find((s: { id: string }) => s.id === svc.serviceId)!;
+      const itemEndTime = new Date(itemStartTime.getTime() + service.duration * 60000);
+      const item = {
+        serviceId: svc.serviceId,
+        staffId: svc.staffId,
+        startTime: new Date(itemStartTime).toISOString(),
+        endTime: itemEndTime.toISOString(),
+        price: service.price,
+      };
+      itemStartTime = itemEndTime;
+      return item;
     });
+
+    const { data: booking, error: createError } = await supabaseAdmin
+      .from("Booking")
+      .insert({
+        reference,
+        userId,
+        salonId,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        totalPrice,
+        source: "ONLINE",
+        status: "CONFIRMED",
+        notes: notes || null,
+      })
+      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address)")
+      .single();
+
+    if (createError || !booking) {
+      console.error("Booking creation Supabase error:", createError);
+      return NextResponse.json(
+        { error: "Erreur lors de la creation" },
+        { status: 500 }
+      );
+    }
+
+    // Create booking items
+    const bookingItems = items.map((item) => ({
+      ...item,
+      bookingId: booking.id,
+    }));
+
+    const { error: itemsError } = await supabaseAdmin
+      .from("BookingItem")
+      .insert(bookingItems);
+
+    if (itemsError) {
+      console.error("Booking items creation error:", itemsError);
+    }
 
     // Send confirmation email/SMS (non-blocking)
     sendBookingConfirmation(booking.id).catch(console.error);
@@ -241,16 +288,13 @@ export async function DELETE(request: Request) {
     }
 
     // Check ownership: user owns booking OR user owns salon
-    const booking = await db.booking.findFirst({
-      where: {
-        id: bookingId,
-        OR: [
-          { userId: user.id },
-          { salon: { ownerId: user.id } },
-        ],
-        status: { in: ["PENDING", "CONFIRMED"] },
-      },
-    });
+    // First, find the booking
+    const { data: booking } = await supabaseAdmin
+      .from("Booking")
+      .select("id, userId, salonId, status")
+      .eq("id", bookingId)
+      .in("status", ["PENDING", "CONFIRMED"])
+      .maybeSingle();
 
     if (!booking) {
       return NextResponse.json(
@@ -259,14 +303,41 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const updated = await db.booking.update({
-      where: { id: bookingId },
-      data: {
+    // Check if user owns the booking or the salon
+    if (booking.userId !== user.id) {
+      const { data: salon } = await supabaseAdmin
+        .from("Salon")
+        .select("id")
+        .eq("id", booking.salonId)
+        .eq("ownerId", user.id)
+        .maybeSingle();
+
+      if (!salon) {
+        return NextResponse.json(
+          { error: "Reservation non trouvee ou non annulable" },
+          { status: 404 }
+        );
+      }
+    }
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from("Booking")
+      .update({
         status: "CANCELLED",
-        cancellationReason: reason,
-        cancelledAt: new Date(),
-      },
-    });
+        cancellationReason: reason || null,
+        cancelledAt: new Date().toISOString(),
+      })
+      .eq("id", bookingId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error("Booking cancellation Supabase error:", updateError);
+      return NextResponse.json(
+        { error: "Erreur lors de l'annulation" },
+        { status: 500 }
+      );
+    }
 
     // Send cancellation email (non-blocking)
     sendBookingCancellation(bookingId).catch(console.error);

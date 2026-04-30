@@ -50,7 +50,7 @@ export class SalonController {
     if (!salon) return null;
 
     // Get aggregated reviews
-    const { avg, count } = await this.deps.reviewRepo.aggregateRating(salon.id);
+    const { avg, count } = await this.deps.reviewRepo.aggregateRating(salon.id as string);
 
     return {
       ...salon,

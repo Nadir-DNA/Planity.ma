@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { supabaseAdmin, insertRow, updateRow } from "@/lib/supabase-helpers";
 import { Resend } from "resend";
 
 // Initialize Resend (will be undefined in dev, but that's OK for now)
@@ -27,16 +27,14 @@ interface SendNotificationParams {
 }
 
 export async function createNotification(params: SendNotificationParams) {
-  const notification = await db.notification.create({
-    data: {
-      userId: params.userId,
-      type: params.type,
-      channel: params.channel,
-      title: params.title,
-      body: params.body,
-      data: params.data ? JSON.parse(JSON.stringify(params.data)) : undefined,
-      status: "PENDING",
-    },
+  const notification = await insertRow("Notification", {
+    userId: params.userId,
+    type: params.type,
+    channel: params.channel,
+    title: params.title,
+    body: params.body,
+    data: params.data ? JSON.parse(JSON.stringify(params.data)) : null,
+    status: "PENDING",
   });
 
   // Actually send via email/SMS/push based on channel
@@ -51,15 +49,14 @@ export async function createNotification(params: SendNotificationParams) {
       console.log(`[PUSH] Would send: ${params.title} - ${params.body}`);
     }
 
-    await db.notification.update({
-      where: { id: notification.id },
-      data: { status: "SENT", sentAt: new Date() },
+    await updateRow("Notification", (notification as Record<string, unknown>).id as string, {
+      status: "SENT",
+      sentAt: new Date().toISOString(),
     });
   } catch (error) {
     console.error(`Failed to send ${params.channel} notification:`, error);
-    await db.notification.update({
-      where: { id: notification.id },
-      data: { status: "FAILED" },
+    await updateRow("Notification", (notification as Record<string, unknown>).id as string, {
+      status: "FAILED",
     });
   }
 
@@ -73,10 +70,11 @@ async function sendEmailNotification(params: SendNotificationParams) {
   }
 
   // Fetch user email
-  const user = await db.user.findUnique({
-    where: { id: params.userId },
-    select: { email: true, name: true },
-  });
+  const { data: user } = await supabaseAdmin
+    .from("User")
+    .select("email, name")
+    .eq("id", params.userId)
+    .single();
 
   if (!user?.email) {
     console.warn(`No email for user ${params.userId}`);
@@ -92,116 +90,132 @@ async function sendEmailNotification(params: SendNotificationParams) {
 }
 
 export async function sendBookingConfirmation(bookingId: string) {
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-    include: {
-      user: true,
-      salon: true,
-      items: { include: { service: true, staff: true } },
-    },
-  });
+  const { data: booking, error } = await supabaseAdmin
+    .from("Booking")
+    .select(`
+      *,
+      user:User!userId(*),
+      salon:Salon!salonId(*),
+      items:BookingItem(*, service:Service!serviceId(*), staff:StaffMember!staffId(*))
+    `)
+    .eq("id", bookingId)
+    .single();
 
-  if (!booking) return;
+  if (error || !booking) return;
 
-  const services = booking.items.map((i) => i.service.name).join(", ");
-  const dateStr = booking.startTime.toLocaleDateString("fr-FR", {
+  const b = booking as Record<string, unknown>;
+  const items = (b.items || []) as Record<string, unknown>[];
+  const services = items.map((i) => (i.service as Record<string, unknown>)?.name ?? "").join(", ");
+  const startTime = new Date(b.startTime as string);
+  const dateStr = startTime.toLocaleDateString("fr-FR", {
     weekday: "long",
     day: "numeric",
     month: "long",
   });
-  const timeStr = booking.startTime.toLocaleTimeString("fr-FR", {
+  const timeStr = startTime.toLocaleTimeString("fr-FR", {
     hour: "2-digit",
     minute: "2-digit",
   });
 
   // Send email
   await createNotification({
-    userId: booking.userId,
+    userId: b.userId as string,
     type: "BOOKING_CONFIRMED",
     channel: "EMAIL",
     title: "Réservation confirmée — Planity.ma",
     body: generateBookingConfirmationEmail({
-      salonName: booking.salon.name,
+      salonName: ((b.salon as Record<string, unknown>)?.name ?? "") as string,
       services,
       date: dateStr,
       time: timeStr,
-      reference: booking.reference,
-      totalPrice: booking.totalPrice,
+      reference: b.reference as string,
+      totalPrice: b.totalPrice as number,
     }),
-    data: { bookingId, salonName: booking.salon.name },
+    data: { bookingId, salonName: (b.salon as Record<string, unknown>)?.name },
   });
 
   // Also send SMS if user has phone
-  if (booking.user.phone) {
+  const user = b.user as Record<string, unknown> | null;
+  if (user?.phone) {
     await createNotification({
-      userId: booking.userId,
+      userId: b.userId as string,
       type: "BOOKING_CONFIRMED",
       channel: "SMS",
       title: "RDV confirmé",
-      body: `RDV ${booking.salon.name} le ${dateStr} à ${timeStr}. Ref: ${booking.reference}`,
+      body: `RDV ${(b.salon as Record<string, unknown>)?.name} le ${dateStr} à ${timeStr}. Ref: ${b.reference}`,
       data: { bookingId },
     });
   }
 }
 
 export async function sendBookingReminder(bookingId: string) {
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-    include: { user: true, salon: true },
-  });
+  const { data: booking, error } = await supabaseAdmin
+    .from("Booking")
+    .select(`*, user:User!userId(*), salon:Salon!salonId(*)`)
+    .eq("id", bookingId)
+    .single();
 
-  if (!booking || booking.status !== "CONFIRMED") return;
+  if (error || !booking) return;
 
-  const timeStr = booking.startTime.toLocaleTimeString("fr-FR", {
+  const b = booking as Record<string, unknown>;
+  if (b.status !== "CONFIRMED") return;
+
+  const startTime = new Date(b.startTime as string);
+  const timeStr = startTime.toLocaleTimeString("fr-FR", {
     hour: "2-digit",
     minute: "2-digit",
   });
 
   await createNotification({
-    userId: booking.userId,
+    userId: b.userId as string,
     type: "BOOKING_REMINDER",
     channel: "SMS",
     title: "Rappel de rendez-vous",
-    body: `Rappel: votre rendez-vous chez ${booking.salon.name} est aujourd'hui à ${timeStr}. Ref: ${booking.reference}`,
+    body: `Rappel: votre rendez-vous chez ${(b.salon as Record<string, unknown>)?.name} est aujourd'hui à ${timeStr}. Ref: ${b.reference}`,
     data: { bookingId },
   });
 }
 
 export async function sendBookingCancellation(bookingId: string) {
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-    include: {
-      user: true,
-      salon: true,
-      items: { include: { service: true } },
-    },
-  });
+  const { data: booking, error } = await supabaseAdmin
+    .from("Booking")
+    .select(`
+      *,
+      user:User!userId(*),
+      salon:Salon!salonId(*),
+      items:BookingItem(*, service:Service!serviceId(*))
+    `)
+    .eq("id", bookingId)
+    .single();
 
-  if (!booking) return;
+  if (error || !booking) return;
 
-  const services = booking.items.map((i) => i.service.name).join(", ");
-  const dateStr = booking.startTime.toLocaleDateString("fr-FR", {
+  const b = booking as Record<string, unknown>;
+  const items = (b.items || []) as Record<string, unknown>[];
+  const services = items.map((i) => (i.service as Record<string, unknown>)?.name ?? "").join(", ");
+  const startTime = new Date(b.startTime as string);
+  const dateStr = startTime.toLocaleDateString("fr-FR", {
     weekday: "long",
     day: "numeric",
     month: "long",
   });
-  const timeStr = booking.startTime.toLocaleTimeString("fr-FR", {
+  const timeStr = startTime.toLocaleTimeString("fr-FR", {
     hour: "2-digit",
     minute: "2-digit",
   });
 
   await createNotification({
-    userId: booking.userId,
+    userId: b.userId as string,
     type: "BOOKING_CANCELLED",
     channel: "EMAIL",
     title: "Réservation annulée — Planity.ma",
     body: generateBookingCancellationEmail({
-      salonName: booking.salon.name,
+      salonName: ((b.salon as Record<string, unknown>)?.name ?? "") as string,
       services,
       date: dateStr,
       time: timeStr,
-      reference: booking.reference,
-      reason: booking.cancellationReason,
+      reference: b.reference as string,
+      reason: b.cancellationReason as string | null | undefined,
     }),
     data: { bookingId },
   });

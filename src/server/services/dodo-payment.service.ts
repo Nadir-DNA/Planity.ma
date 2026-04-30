@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { supabaseAdmin, findById, findByUnique, insertRow, updateRow } from "@/lib/supabase-helpers";
 
 /**
  * Dodo Payment Service for Morocco
@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
  */
 
 const DODO_API_BASE = "https://api.dodopayments.com";
-const DODO_API_KEY = process.env.DODO_PAYMENT_API_KEY || "";
+const DODO_API_KEY = process.env.DODO_API_KEY || "";
 
 interface CreatePaymentParams {
   bookingId: string;
@@ -94,27 +94,26 @@ export async function initDodoPayment(params: CreatePaymentParams): Promise<Paym
   }
 
   // Get booking details
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-    include: { salon: true, user: true },
-  });
+  const { data: booking, error: bookingError } = await supabaseAdmin
+    .from("Booking")
+    .select("*, salon:Salon!salonId(*), user:User!userId(*)")
+    .eq("id", bookingId)
+    .single();
 
-  if (!booking) {
+  if (bookingError || !booking) {
     return { success: false, error: "Réservation introuvable" };
   }
 
   // Create payment record
-  const payment = await db.payment.create({
-    data: {
-      bookingId,
-      salonId: booking.salonId,
-      userId: booking.userId || undefined,
-      amount,
-      tip: params.tip || 0,
-      method,
-      type: "BOOKING_DEPOSIT",
-      status: "PENDING",
-    },
+  const payment = await insertRow("Payment", {
+    bookingId,
+    salonId: booking.salonId,
+    userId: booking.userId || null,
+    amount,
+    tip: params.tip || 0,
+    method,
+    type: "BOOKING_DEPOSIT",
+    status: "PENDING",
   });
 
   // Create Dodo checkout session
@@ -124,7 +123,7 @@ export async function initDodoPayment(params: CreatePaymentParams): Promise<Paym
     currency: "MAD",
     metadata: {
       salon_id: booking.salonId,
-      payment_id: payment.id,
+      payment_id: (payment as Record<string, unknown>).id as string,
     },
   });
 
@@ -133,16 +132,13 @@ export async function initDodoPayment(params: CreatePaymentParams): Promise<Paym
   }
 
   // Update payment with Dodo ID
-  await db.payment.update({
-    where: { id: payment.id },
-    data: {
-      stripePaymentIntentId: checkoutSession.id, // Reuse existing field for Dodo payment ID
-    },
+  await updateRow("Payment", (payment as Record<string, unknown>).id as string, {
+    stripePaymentIntentId: checkoutSession.id, // Reuse existing field for Dodo payment ID
   });
 
   return {
     success: true,
-    paymentId: payment.id,
+    paymentId: (payment as Record<string, unknown>).id as string,
     redirectUrl: checkoutSession.checkout_url,
     dodoPaymentId: checkoutSession.id,
   };
@@ -184,33 +180,24 @@ async function handlePaymentSuccess(data: Record<string, any>): Promise<{ succes
   }
 
   // Find payment
-  const payment = await db.payment.findUnique({
-    where: { id: paymentId },
-    include: { booking: true },
-  });
+  const payment = await findById("Payment", paymentId);
 
   if (!payment) {
     return { success: false, error: "Paiement introuvable" };
   }
 
   // Update payment status
-  await db.payment.update({
-    where: { id: paymentId },
-    data: {
-      status: "SUCCEEDED",
-      stripePaymentIntentId: data.id || payment.stripePaymentIntentId,
-      receiptUrl: data.receipt_url || payment.receiptUrl,
-    },
+  await updateRow("Payment", paymentId, {
+    status: "SUCCEEDED",
+    stripePaymentIntentId: data.id || (payment as Record<string, unknown>).stripePaymentIntentId,
+    receiptUrl: data.receipt_url || (payment as Record<string, unknown>).receiptUrl,
   });
 
   // Update booking if payment succeeded
-  if (bookingId && payment.booking) {
-    await db.booking.update({
-      where: { id: bookingId },
-      data: {
-        status: "CONFIRMED",
-        depositPaid: true,
-      },
+  if (bookingId && (payment as Record<string, unknown>).bookingId) {
+    await updateRow("Booking", bookingId, {
+      status: "CONFIRMED",
+      depositPaid: true,
     });
   }
 
@@ -224,10 +211,7 @@ async function handlePaymentFailed(data: Record<string, any>): Promise<{ success
     return { success: false, error: "Payment ID manquant" };
   }
 
-  await db.payment.update({
-    where: { id: paymentId },
-    data: { status: "FAILED" },
-  });
+  await updateRow("Payment", paymentId, { status: "FAILED" });
 
   return { success: true };
 }
@@ -240,39 +224,31 @@ async function handlePaymentRefunded(data: Record<string, any>): Promise<{ succe
   }
 
   // Create refund record
-  const originalPayment = await db.payment.findUnique({
-    where: { id: paymentId },
-  });
+  const originalPayment = await findById("Payment", paymentId);
 
   if (!originalPayment) {
     return { success: false, error: "Paiement original introuvable" };
   }
 
-  await db.payment.create({
-    data: {
-      bookingId: originalPayment.bookingId,
-      salonId: originalPayment.salonId,
-      userId: originalPayment.userId,
-      amount: -originalPayment.amount,
-      tip: 0,
-      method: originalPayment.method,
-      type: "REFUND",
-      status: "SUCCEEDED",
-    },
+  const p = originalPayment as Record<string, unknown>;
+
+  await insertRow("Payment", {
+    bookingId: p.bookingId as string | null,
+    salonId: p.salonId as string,
+    userId: p.userId as string | null,
+    amount: -(p.amount as number),
+    tip: 0,
+    method: p.method as string,
+    type: "REFUND",
+    status: "SUCCEEDED",
   });
 
   // Update original payment
-  await db.payment.update({
-    where: { id: paymentId },
-    data: { status: "REFUNDED" },
-  });
+  await updateRow("Payment", paymentId, { status: "REFUNDED" });
 
   // Update booking
-  if (originalPayment.bookingId) {
-    await db.booking.update({
-      where: { id: originalPayment.bookingId },
-      data: { status: "CANCELLED" },
-    });
+  if (p.bookingId) {
+    await updateRow("Booking", p.bookingId as string, { status: "CANCELLED" });
   }
 
   return { success: true };
@@ -284,33 +260,26 @@ async function handlePaymentRefunded(data: Record<string, any>): Promise<{ succe
 export async function processCashPayment(params: CreatePaymentParams): Promise<PaymentResult> {
   const { bookingId, amount } = params;
 
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-  });
+  const booking = await findById("Booking", bookingId);
 
   if (!booking) {
     return { success: false, error: "Réservation introuvable" };
   }
 
-  const payment = await db.payment.create({
-    data: {
-      bookingId,
-      salonId: booking.salonId,
-      userId: booking.userId || undefined,
-      amount,
-      method: "CASH",
-      type: "IN_SALON",
-      status: "SUCCEEDED",
-    },
+  const payment = await insertRow("Payment", {
+    bookingId,
+    salonId: (booking as Record<string, unknown>).salonId as string,
+    userId: (booking as Record<string, unknown>).userId as string || null,
+    amount,
+    method: "CASH",
+    type: "IN_SALON",
+    status: "SUCCEEDED",
   });
 
   // Update booking
-  await db.booking.update({
-    where: { id: bookingId },
-    data: { status: "COMPLETED" },
-  });
+  await updateRow("Booking", bookingId, { status: "COMPLETED" });
 
-  return { success: true, paymentId: payment.id };
+  return { success: true, paymentId: (payment as Record<string, unknown>).id as string };
 }
 
 /**
@@ -319,52 +288,47 @@ export async function processCashPayment(params: CreatePaymentParams): Promise<P
 export async function processCheckPayment(params: CreatePaymentParams): Promise<PaymentResult> {
   const { bookingId, amount } = params;
 
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-  });
+  const booking = await findById("Booking", bookingId);
 
   if (!booking) {
     return { success: false, error: "Réservation introuvable" };
   }
 
-  const payment = await db.payment.create({
-    data: {
-      bookingId,
-      salonId: booking.salonId,
-      userId: booking.userId || undefined,
-      amount,
-      method: "CHECK",
-      type: "IN_SALON",
-      status: "PENDING",
-    },
+  const payment = await insertRow("Payment", {
+    bookingId,
+    salonId: (booking as Record<string, unknown>).salonId as string,
+    userId: (booking as Record<string, unknown>).userId as string || null,
+    amount,
+    method: "CHECK",
+    type: "IN_SALON",
+    status: "PENDING",
   });
 
-  return { success: true, paymentId: payment.id };
+  return { success: true, paymentId: (payment as Record<string, unknown>).id as string };
 }
 
 /**
  * Process refund
  */
 export async function processRefund(paymentId: string, amount?: number): Promise<PaymentResult> {
-  const payment = await db.payment.findUnique({
-    where: { id: paymentId },
-    include: { booking: true },
-  });
+  const payment = await findById("Payment", paymentId);
 
   if (!payment) {
     return { success: false, error: "Paiement introuvable" };
   }
 
-  if (payment.status !== "SUCCEEDED") {
+  const p = payment as Record<string, unknown>;
+
+  if (p.status !== "SUCCEEDED") {
     return { success: false, error: "Paiement non remboursable" };
   }
 
-  const refundAmount = amount || payment.amount;
+  const refundAmount = amount || (p.amount as number);
 
   // If it was a Dodo payment, try to refund via API
-  if (payment.stripePaymentIntentId && payment.method === "CARD") {
+  if (p.stripePaymentIntentId && p.method === "CARD") {
     try {
-      await fetch(`${DODO_API_BASE}/v1/payments/${payment.stripePaymentIntentId}/refund`, {
+      await fetch(`${DODO_API_BASE}/v1/payments/${p.stripePaymentIntentId}/refund`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${DODO_API_KEY}`,
@@ -381,16 +345,14 @@ export async function processRefund(paymentId: string, amount?: number): Promise
   }
 
   // Create refund record
-  await db.payment.create({
-    data: {
-      bookingId: payment.bookingId,
-      salonId: payment.salonId,
-      userId: payment.userId,
-      amount: -refundAmount,
-      method: payment.method,
-      type: "REFUND",
-      status: "SUCCEEDED",
-    },
+  await insertRow("Payment", {
+    bookingId: p.bookingId as string | null,
+    salonId: p.salonId as string,
+    userId: p.userId as string | null,
+    amount: -refundAmount,
+    method: p.method as string,
+    type: "REFUND",
+    status: "SUCCEEDED",
   });
 
   return { success: true };

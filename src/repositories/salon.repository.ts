@@ -1,21 +1,33 @@
-
 /**
  * Salon Repository Implementation
+ * Uses Supabase Admin REST API instead of Prisma
  */
 
-import { db } from "@/lib/db";
-import type { Salon } from "@prisma/client";
+import { supabaseAdmin, findById, findByUnique, findMany, countRows, insertRow, updateRow } from "@/lib/supabase-helpers";
 
 export class SalonRepository {
-  async findById(id: string): Promise<Salon | null> {
-    return db.salon.findUnique({ where: { id } });
+  async findById(id: string) {
+    return findById("Salon", id);
   }
 
-  async findBySlug(slug: string): Promise<Salon | null> {
-    return db.salon.findUnique({
-      where: { slug },
-      include: { openingHours: true, services: true, staff: true },
-    });
+  async findBySlug(slug: string) {
+    // Prisma include: openingHours, services, staff — needs separate fetches or join string
+    const { data, error } = await supabaseAdmin
+      .from("Salon")
+      .select(`
+        *,
+        openingHours:OpeningHours(*),
+        services:Service(*),
+        staff:StaffMember(*)
+      `)
+      .eq("slug", slug)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") return null;
+      throw new Error(`findBySlug: ${error.message}`);
+    }
+    return data;
   }
 
   async search(params: {
@@ -26,41 +38,31 @@ export class SalonRepository {
     limit?: number;
     isActive?: boolean;
     isVerified?: boolean;
-  }): Promise<{ salons: Salon[]; total: number }> {
+  }): Promise<{ salons: unknown[]; total: number }> {
     const { query, city, category, page = 1, limit = 20, isActive, isVerified } = params;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
 
-    const where: any = {};
-    
-    if (isActive) where.isActive = true;
-    if (isVerified) where.isVerified = true;
-    
-    if (city) {
-      where.city = { contains: city, mode: "insensitive" };
-    }
-    
-    if (category) {
-      where.category = category.toUpperCase().replace(/-/g, "_");
-    }
-    
+    let qb = supabaseAdmin
+      .from("Salon")
+      .select("*", { count: "exact" });
+
+    if (isActive) qb = qb.eq("isActive", true);
+    if (isVerified) qb = qb.eq("isVerified", true);
+    if (city) qb = qb.ilike("city", `%${city}%`);
+    if (category) qb = qb.eq("category", category.toUpperCase().replace(/-/g, "_"));
     if (query) {
-      where.OR = [
-        { name: { contains: query, mode: "insensitive" } },
-        { description: { contains: query, mode: "insensitive" } },
-        { city: { contains: query, mode: "insensitive" } },
-      ];
+      // Supabase doesn't support OR with ilike in a single call easily,
+      // so we use .or() with ilike
+      qb = qb.or(`name.ilike.%${query}%,description.ilike.%${query}%,city.ilike.%${query}%`);
     }
 
-    const [salons, total] = await Promise.all([
-      db.salon.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { averageRating: "desc" },
-      }),
-      db.salon.count({ where }),
-    ]);
+    qb = qb.order("averageRating", { ascending: false }).range(from, to);
 
-    return { salons, total };
+    const { data, count, error } = await qb;
+    if (error) throw new Error(`Salon search: ${error.message}`);
+
+    return { salons: data || [], total: count ?? 0 };
   }
 
   async create(data: {
@@ -75,36 +77,31 @@ export class SalonRepository {
     description?: string;
     ownerId: string;
     isActive?: boolean;
-  }): Promise<Salon> {
-    return db.salon.create({
-      data: {
-        name: data.name,
-        slug: data.slug,
-        category: data.category as any,
-        address: data.address,
-        city: data.city,
-        postalCode: data.postalCode,
-        phone: data.phone,
-        email: data.email,
-        description: data.description,
-        ownerId: data.ownerId,
-        isActive: data.isActive ?? false,
-        isVerified: false,
-      },
+  }) {
+    return insertRow("Salon", {
+      name: data.name,
+      slug: data.slug,
+      category: data.category.toUpperCase().replace(/-/g, "_"),
+      address: data.address,
+      city: data.city,
+      postalCode: data.postalCode || null,
+      phone: data.phone,
+      email: data.email || null,
+      description: data.description || null,
+      ownerId: data.ownerId,
+      isActive: data.isActive ?? false,
+      isVerified: false,
     });
   }
 
   async updateRating(salonId: string, averageRating: number, reviewCount: number): Promise<void> {
-    await db.salon.update({
-      where: { id: salonId },
-      data: { averageRating, reviewCount },
-    });
+    await updateRow("Salon", salonId, { averageRating, reviewCount });
   }
 
-  async findByOwner(ownerId: string): Promise<Salon[]> {
-    return db.salon.findMany({
-      where: { ownerId },
-      orderBy: { createdAt: "desc" },
+  async findByOwner(ownerId: string) {
+    return findMany("Salon", {
+      filters: { ownerId },
+      order: { column: "createdAt", ascending: false },
     });
   }
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -38,12 +38,13 @@ export async function PATCH(req: NextRequest) {
 
     // Check phone uniqueness if changed
     if (phone !== undefined && phone !== null) {
-      const existing = await db.user.findFirst({
-        where: {
-          phone: phone,
-          NOT: { id: authUser.id },
-        },
-      });
+      const { data: existing } = await supabaseAdmin
+        .from("User")
+        .select("id")
+        .eq("phone", phone)
+        .neq("id", authUser.id)
+        .maybeSingle();
+
       if (existing) {
         return NextResponse.json(
           { error: "Ce numéro de téléphone est déjà utilisé" },
@@ -58,20 +59,17 @@ export async function PATCH(req: NextRequest) {
     if (phone !== undefined) updateData.phone = phone || null;
     if (locale !== undefined) updateData.locale = locale;
 
-    const user = await db.user.update({
-      where: { id: authUser.id },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        locale: true,
-        notifyBookingConfirmed: true,
-        notifyBookingReminder: true,
-        notifyMarketing: true,
-      },
-    });
+    const { data: user, error: updateError } = await supabaseAdmin
+      .from("User")
+      .update(updateData)
+      .eq("id", authUser.id)
+      .select("id, name, email, phone, locale, notifyBookingConfirmed, notifyBookingReminder, notifyMarketing")
+      .single();
+
+    if (updateError) {
+      console.error("[PATCH /api/v1/user/profile] Supabase error:", updateError);
+      return NextResponse.json({ error: "Erreur interne du serveur" }, { status: 500 });
+    }
 
     return NextResponse.json({ user });
   } catch (error) {
@@ -87,21 +85,13 @@ export async function GET() {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const dbUser = await db.user.findUnique({
-      where: { id: authUser.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        locale: true,
-        notifyBookingConfirmed: true,
-        notifyBookingReminder: true,
-        notifyMarketing: true,
-      },
-    });
+    const { data: dbUser, error } = await supabaseAdmin
+      .from("User")
+      .select("id, name, email, phone, locale, notifyBookingConfirmed, notifyBookingReminder, notifyMarketing")
+      .eq("id", authUser.id)
+      .single();
 
-    if (!dbUser) {
+    if (error || !dbUser) {
       return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
 

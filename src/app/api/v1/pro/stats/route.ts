@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -11,11 +11,14 @@ export async function GET() {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const salon = await db.salon.findFirst({
-      where: { ownerId: user.id },
-    });
+    // Find salon owned by user
+    const { data: salon, error: salonError } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
 
-    if (!salon) {
+    if (salonError || !salon) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
 
@@ -36,75 +39,87 @@ export async function GET() {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
+    // Query all stats in parallel
     const [
-      bookingsToday,
-      bookingsThisWeek,
-      completedThisMonth,
-      newClientsThisMonth,
-      pendingBookings,
-      totalRevenue,
+      bookingsTodayResult,
+      bookingsThisWeekResult,
+      completedThisMonthResult,
+      newClientsThisMonthResult,
+      pendingBookingsResult,
+      totalRevenueResult,
     ] = await Promise.all([
       // Rendez-vous aujourd'hui (CONFIRMED)
-      db.booking.count({
-        where: {
-          salonId: salon.id,
-          status: "CONFIRMED",
-          startTime: { gte: todayStart, lte: todayEnd },
-        },
-      }),
+      supabaseAdmin
+        .from("Booking")
+        .select("id", { count: "exact", head: true })
+        .eq("salonId", salon.id)
+        .eq("status", "CONFIRMED")
+        .gte("startTime", todayStart.toISOString())
+        .lte("startTime", todayEnd.toISOString()),
+
       // Rendez-vous cette semaine (CONFIRMED + PENDING)
-      db.booking.count({
-        where: {
-          salonId: salon.id,
-          status: { in: ["CONFIRMED", "PENDING"] },
-          startTime: { gte: weekStart, lte: weekEnd },
-        },
-      }),
+      supabaseAdmin
+        .from("Booking")
+        .select("id", { count: "exact", head: true })
+        .eq("salonId", salon.id)
+        .in("status", ["CONFIRMED", "PENDING"])
+        .gte("startTime", weekStart.toISOString())
+        .lte("startTime", weekEnd.toISOString()),
+
       // Completed bookings this month (for revenue)
-      db.booking.findMany({
-        where: {
-          salonId: salon.id,
-          status: "COMPLETED",
-          startTime: { gte: monthStart, lte: monthEnd },
-        },
-        select: { totalPrice: true },
-      }),
-      // New clients this month
-      db.booking.findMany({
-        where: {
-          salonId: salon.id,
-          startTime: { gte: monthStart, lte: monthEnd },
-        },
-        select: { userId: true },
-        distinct: ["userId"],
-      }),
+      supabaseAdmin
+        .from("Booking")
+        .select("totalPrice")
+        .eq("salonId", salon.id)
+        .eq("status", "COMPLETED")
+        .gte("startTime", monthStart.toISOString())
+        .lte("startTime", monthEnd.toISOString()),
+
+      // New clients this month (distinct userIds)
+      supabaseAdmin
+        .from("Booking")
+        .select("userId")
+        .eq("salonId", salon.id)
+        .gte("startTime", monthStart.toISOString())
+        .lte("startTime", monthEnd.toISOString()),
+
       // Pending bookings
-      db.booking.count({
-        where: {
-          salonId: salon.id,
-          status: "PENDING",
-        },
-      }),
+      supabaseAdmin
+        .from("Booking")
+        .select("id", { count: "exact", head: true })
+        .eq("salonId", salon.id)
+        .eq("status", "PENDING"),
+
       // Total revenue (all completed)
-      db.booking.aggregate({
-        where: {
-          salonId: salon.id,
-          status: "COMPLETED",
-        },
-        _sum: { totalPrice: true },
-      }),
+      supabaseAdmin
+        .from("Booking")
+        .select("totalPrice")
+        .eq("salonId", salon.id)
+        .eq("status", "COMPLETED"),
     ]);
 
-    const monthlyRevenue = completedThisMonth.reduce((sum, b) => sum + b.totalPrice, 0);
-    const newClientsCount = newClientsThisMonth.length;
+    const bookingsToday = bookingsTodayResult.count || 0;
+    const bookingsThisWeek = bookingsThisWeekResult.count || 0;
+    const monthlyRevenue = (completedThisMonthResult.data || []).reduce(
+      (sum: number, b: { totalPrice: number }) => sum + (b.totalPrice || 0),
+      0
+    );
+    const newClientsThisMonth = new Set(
+      (newClientsThisMonthResult.data || []).map((b: { userId: string }) => b.userId)
+    ).size;
+    const pendingBookings = pendingBookingsResult.count || 0;
+    const totalRevenue = (totalRevenueResult.data || []).reduce(
+      (sum: number, b: { totalPrice: number }) => sum + (b.totalPrice || 0),
+      0
+    );
 
     return NextResponse.json({
       bookingsToday,
       bookingsThisWeek,
       monthlyRevenue,
-      newClientsThisMonth: newClientsCount,
+      newClientsThisMonth,
       pendingBookings,
-      totalRevenue: totalRevenue._sum.totalPrice || 0,
+      totalRevenue,
     });
   } catch (error) {
     console.error("Stats fetch error:", error);

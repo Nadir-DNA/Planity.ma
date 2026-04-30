@@ -56,8 +56,8 @@ export class BookingController {
     }
 
     // Calculate totals
-    const totalPrice = dbServices.reduce((sum, s) => sum + s.price, 0);
-    const totalDuration = dbServices.reduce((sum, s) => sum + s.duration, 0);
+    const totalPrice = dbServices.reduce((sum, s) => sum + (s.price as number || 0), 0);
+    const totalDuration = dbServices.reduce((sum, s) => sum + (s.duration as number || 0), 0);
 
     // Parse date/time
     const startTime = new Date(`${date}T${time}`);
@@ -83,13 +83,14 @@ export class BookingController {
         notes,
         items: services.map((s, i) => {
           const service = dbServices.find(ds => ds.id === s.serviceId)!;
-          const itemStartTime = new Date(startTime.getTime() + i * service.duration * 60 * 1000);
+          const duration = (service.duration as number) || 0;
+          const itemStartTime = new Date(startTime.getTime() + i * duration * 60 * 1000);
           return {
             serviceId: s.serviceId,
             staffId: s.staffId || defaultStaffId,
             startTime: itemStartTime,
-            endTime: new Date(itemStartTime.getTime() + service.duration * 60 * 1000),
-            price: service.price,
+            endTime: new Date(itemStartTime.getTime() + duration * 60 * 1000),
+            price: (service.price as number) || 0,
           };
         }),
         services,
@@ -99,12 +100,12 @@ export class BookingController {
       return {
         success: true,
         booking: {
-          id: booking.id,
-          reference: booking.reference,
-          startTime: booking.startTime,
-          endTime: booking.endTime,
-          totalPrice: booking.totalPrice,
-          status: booking.status,
+          id: booking.id as string,
+          reference: booking.reference as string,
+          startTime: new Date(booking.startTime as string),
+          endTime: new Date(booking.endTime as string),
+          totalPrice: booking.totalPrice as number,
+          status: booking.status as string,
         },
       };
     } catch (error) {
@@ -161,12 +162,12 @@ export class BookingController {
     return {
       success: true,
       booking: {
-        id: updated.id,
-        reference: updated.reference,
-        startTime: updated.startTime,
-        endTime: updated.endTime,
-        totalPrice: updated.totalPrice,
-        status: updated.status,
+        id: updated.id as string,
+        reference: updated.reference as string,
+        startTime: new Date(updated.startTime as string),
+        endTime: new Date(updated.endTime as string),
+        totalPrice: updated.totalPrice as number,
+        status: updated.status as string,
       },
     };
   }

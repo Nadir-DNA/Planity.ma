@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { supabaseAdmin } from "@/lib/supabase";
 import * as bcrypt from "bcryptjs";
 
 export async function PATCH(req: NextRequest) {
@@ -47,12 +47,13 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Fetch current user with passwordHash
-    const dbUser = await db.user.findUnique({
-      where: { id: authUser.id },
-      select: { id: true, passwordHash: true },
-    });
+    const { data: dbUser, error } = await supabaseAdmin
+      .from("User")
+      .select("id, passwordHash")
+      .eq("id", authUser.id)
+      .single();
 
-    if (!dbUser) {
+    if (error || !dbUser) {
       return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
     }
 
@@ -76,10 +77,15 @@ export async function PATCH(req: NextRequest) {
     const saltRounds = 12;
     const newHash = await bcrypt.hash(newPassword, saltRounds);
 
-    await db.user.update({
-      where: { id: dbUser.id },
-      data: { passwordHash: newHash },
-    });
+    const { error: updateError } = await supabaseAdmin
+      .from("User")
+      .update({ passwordHash: newHash })
+      .eq("id", dbUser.id);
+
+    if (updateError) {
+      console.error("[PATCH /api/v1/user/password] Supabase update error:", updateError);
+      return NextResponse.json({ error: "Erreur interne du serveur" }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
