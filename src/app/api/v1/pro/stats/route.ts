@@ -50,6 +50,7 @@ export async function GET(request: Request) {
       completedThisMonthResult,
       newClientsThisMonthResult,
       pendingBookingsResult,
+      totalBookingsResult,
       totalRevenueResult,
     ] = await Promise.all([
       // Rendez-vous aujourd'hui (CONFIRMED)
@@ -94,6 +95,13 @@ export async function GET(request: Request) {
         .eq("salonId", salon.id)
         .eq("status", "PENDING"),
 
+      // Total bookings (all statuses except CANCELLED)
+      supabaseAdmin
+        .from("Booking")
+        .select("id", { count: "exact", head: true })
+        .eq("salonId", salon.id)
+        .neq("status", "CANCELLED"),
+
       // Total revenue (all completed)
       supabaseAdmin
         .from("Booking")
@@ -112,12 +120,14 @@ export async function GET(request: Request) {
       (newClientsThisMonthResult.data || []).map((b: { userId: string }) => b.userId)
     ).size;
     const pendingBookings = pendingBookingsResult.count || 0;
+    const totalBookings = totalBookingsResult.count || 0;
     const totalRevenue = (totalRevenueResult.data || []).reduce(
       (sum: number, b: { totalPrice: number }) => sum + (b.totalPrice || 0),
       0
     );
 
     return NextResponse.json({
+      totalBookings,
       bookingsToday,
       bookingsThisWeek,
       monthlyRevenue,
