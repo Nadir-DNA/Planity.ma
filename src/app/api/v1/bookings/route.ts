@@ -5,6 +5,7 @@ import { paginationSchema } from "@/lib/validations";
 import { generateBookingReference } from "@/lib/utils";
 import { createId as createCuid } from "@paralleldrive/cuid2";
 import { sendBookingConfirmation, sendBookingCancellation } from "@/server/services/notification.service";
+import { getMockSalon, MOCK_SALONS } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,6 @@ export async function GET(request: Request) {
       total: 0,
       page: 1,
       totalPages: 0,
-      _debug: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -98,19 +98,41 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch services
+    // Fetch services — try Supabase first, fallback to mock
     const serviceIds = services.map((s: { serviceId: string }) => s.serviceId);
-    const { data: dbServices, error: svcError } = await supabaseAdmin
+    let dbServices: Array<{ id: string; price: number; duration: number; salonId: string }> | null = null;
+    let isMockBooking = false;
+
+    const { data: supabaseServices, error: svcError } = await supabaseAdmin
       .from("Service")
       .select("*")
       .in("id", serviceIds)
       .eq("salonId", salonId);
 
-    if (svcError || !dbServices || dbServices.length !== serviceIds.length) {
-      return NextResponse.json(
-        { error: "Un ou plusieurs services sont invalides" },
-        { status: 400 }
-      );
+    if (!svcError && supabaseServices && supabaseServices.length === serviceIds.length) {
+      dbServices = supabaseServices;
+    } else {
+      // Fallback: try mock data lookup
+      const mockSalon = getMockSalon(salonId) || MOCK_SALONS.find(s => s.id === salonId);
+      if (mockSalon) {
+        const mockSvcList = mockSalon.services.filter(s => serviceIds.includes(s.id));
+        if (mockSvcList.length === serviceIds.length) {
+          dbServices = mockSvcList.map(s => ({
+            id: s.id,
+            price: s.price,
+            duration: s.duration,
+            salonId: salonId,
+          }));
+          isMockBooking = true;
+        }
+      }
+
+      if (!dbServices) {
+        return NextResponse.json(
+          { error: "Un ou plusieurs services sont invalides" },
+          { status: 400 }
+        );
+      }
     }
 
     const totalPrice = dbServices.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
@@ -120,6 +142,43 @@ export async function POST(request: Request) {
     const [hours, minutes] = time.split(":").map(Number);
     const startTime = new Date(year, month - 1, day, hours, minutes);
     const endTime = new Date(startTime.getTime() + totalDuration * 60000);
+
+    // Mock booking: return simulated booking without touching Supabase
+    if (isMockBooking) {
+      const mockSalon = getMockSalon(salonId) || MOCK_SALONS.find(s => s.id === salonId);
+      const reference = generateBookingReference();
+      const bookingId = createCuid();
+      const firstService = dbServices[0];
+      const mockStaff = mockSalon?.staff?.[0];
+
+      return NextResponse.json({
+        booking: {
+          id: bookingId,
+          reference,
+          userId,
+          salonId,
+          status: "CONFIRMED",
+          source: "ONLINE",
+          totalPrice,
+          startTime: startTime.toISOString(),
+          endTime: endTime.toISOString(),
+          notes: notes || null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          salon: mockSalon ? { id: mockSalon.id, name: mockSalon.name, slug: mockSalon.slug, city: mockSalon.city, address: mockSalon.address } : null,
+          items: dbServices.map((svc, i) => ({
+            id: createCuid(),
+            serviceId: svc.id,
+            staffId: mockStaff?.id || `mock-staff-${i}`,
+            startTime: new Date(startTime.getTime() + i * svc.duration * 60000).toISOString(),
+            endTime: new Date(startTime.getTime() + (i + 1) * svc.duration * 60000).toISOString(),
+            price: svc.price,
+            service: { id: svc.id, name: mockSalon?.services?.find(s => s.id === svc.id)?.name || "Service", price: svc.price, duration: svc.duration },
+            staff: mockStaff ? { id: mockStaff.id, displayName: mockStaff.displayName } : null,
+          })),
+        },
+      }, { status: 201 });
+    }
 
     // Resolve staff IDs: for services without a staffId, find an eligible staff member
     const resolvedServices = await Promise.all(

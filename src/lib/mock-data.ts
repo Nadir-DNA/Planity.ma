@@ -279,8 +279,8 @@ export const MOCK_SALONS: MockSalon[] = [
     address: "56 Boulevard de la Corniche",
     phone: "+212 528 345 678",
     email: "reservation@oceane-spa.ma",
-    coverImage: "https://images.unsplash.com/photo-1634449571010-02ee6e8f02b6?w=1200&h=800&fit=crop",
-    photos: [{"id": "cf-1", "url": "https://images.unsplash.com/photo-1634449571010-02ee6e8f02b6?w=800&h=600&fit=crop", "alt": "Coiffure", "order": 0}, {"id": "cf-2", "url": "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&h=600&fit=crop", "alt": "Salon", "order": 1}],
+    coverImage: "https://images.unsplash.com/photo-1600948836781-67e5895f5512?w=1200&h=800&fit=crop",
+    photos: [{"id": "os-1", "url": "https://images.unsplash.com/photo-1600948836781-67e5895f5512?w=800&h=600&fit=crop", "alt": "Spa mer", "order": 0}, {"id": "os-2", "url": "https://images.unsplash.com/photo-1545579134-6a9c6e7e4f2d?w=800&h=600&fit=crop", "alt": "Soins", "order": 1}],
     isActive: true,
     isVerified: true,
     averageRating: 4.9,
@@ -315,8 +315,8 @@ export const MOCK_SALONS: MockSalon[] = [
     address: "87 Rue Allal Ben Abdellah",
     phone: "+212 522 567 890",
     email: "hello@nail-palace.ma",
-    coverImage: "https://images.unsplash.com/photo-1519014816541-b57beca5a1f8?w=1200&h=800&fit=crop",
-    photos: [{"id": "np-1", "url": "https://images.unsplash.com/photo-1519014816541-b57beca5a1f8?w=800&h=600&fit=crop", "alt": "Onglerie", "order": 0}],
+    coverImage: "https://images.unsplash.com/photo-1621605815971-fbc982cf8b8a?w=1200&h=800&fit=crop",
+    photos: [{"id": "np-1", "url": "https://images.unsplash.com/photo-1621605815971-fbc982cf8b8a?w=800&h=600&fit=crop", "alt": "Onglerie", "order": 0}],
     isActive: true,
     isVerified: true,
     averageRating: 4.4,
@@ -578,7 +578,9 @@ export function searchMockSalons(params: {
   let results = [...MOCK_SALONS];
 
   if (city) {
-    results = results.filter((s) => s.city.toLowerCase() === city.toLowerCase());
+    const normalizeCity = (c: string) => c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const normalizedCity = normalizeCity(city);
+    results = results.filter((s) => normalizeCity(s.city) === normalizedCity);
   }
 
   if (category) {

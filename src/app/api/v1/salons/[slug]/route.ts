@@ -46,9 +46,11 @@ export async function GET(
       );
     }
 
+    // Strip PII from mock response
+    const { email: _email, phone: _phone, ...safeMockSalon } = mockSalon;
     return NextResponse.json({
       salon: {
-        ...mockSalon,
+        ...safeMockSalon,
         _count: {
           reviews: mockSalon.reviewCount,
           bookings: Math.floor(mockSalon.reviewCount * 1.5),
