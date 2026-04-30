@@ -175,6 +175,8 @@ export async function GET(request: Request) {
         address: s.address,
         phone: s.phone,
         email: s.email,
+        coverImage: s.coverImage,
+        photos: s.photos,
         isActive: s.isActive,
         isVerified: s.isVerified,
         averageRating: s.averageRating,
