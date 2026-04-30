@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mail, Lock, User, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { registerUser } from "@/server/actions/auth";
-import { Turnstile } from "@/components/shared/turnstile";
 
 const MA_PHONE_REGEX = /^(\+212|0)([6-7]\d{8})$/;
 
@@ -24,7 +23,6 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function updateField(field: string, value: string) {
@@ -53,11 +51,6 @@ setPhoneError("Format invalide. Exemples : 0612345678, +212****5678");
       return;
     }
 
-    if (!turnstileToken) {
-      setError("Veuillez compléter la vérification CAPTCHA");
-      return;
-    }
-
     startTransition(async () => {
       const form = new FormData();
       form.append("firstName", formData.firstName);
@@ -65,15 +58,12 @@ setPhoneError("Format invalide. Exemples : 0612345678, +212****5678");
       form.append("email", formData.email);
       form.append("phone", formData.phone);
       form.append("password", formData.password);
-      form.append("turnstileToken", turnstileToken);
 
       const result = await registerUser(form);
 
       if (result.error) {
         setError(result.error);
-        // Reset turnstile token so user must re-verify
-        setTurnstileToken(null);
-        return;
+            return;
       }
 
       router.push("/connexion?registered=true");
@@ -198,21 +188,11 @@ setPhoneError("Format invalide. Exemples : 0612345678, +212****5678");
             </div>
           </div>
 
-          {/* Cloudflare Turnstile CAPTCHA */}
-          <Turnstile
-            onVerify={(token) => setTurnstileToken(token)}
-            onExpire={() => setTurnstileToken(null)}
-            onError={() => {
-              setTurnstileToken(null);
-              setError("Erreur de vérification CAPTCHA. Veuillez réessayer.");
-            }}
-          />
-
           <Button
             type="submit"
             className="w-full"
             size="lg"
-            disabled={isPending || !turnstileToken}
+            disabled={isPending}
           >
             {isPending ? "Création en cours..." : "Créer mon compte"}
           </Button>

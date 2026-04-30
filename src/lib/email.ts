@@ -27,7 +27,7 @@ export async function sendEmail({ to, subject, html }: EmailOptions) {
 
   try {
     const { data, error } = await client.emails.send({
-      from: "Planity.ma <noreply@planity.ma>",
+      from: "Planity.ma <onboarding@resend.dev>",
       to,
       subject,
       html,

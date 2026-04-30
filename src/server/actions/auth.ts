@@ -3,7 +3,6 @@
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { verifyTurnstile } from "@/lib/turnstile";
 
 const registerSchema = z.object({
   firstName: z.string().min(2),
@@ -11,7 +10,6 @@ const registerSchema = z.object({
   email: z.string().email(),
   phone: z.string().optional(),
   password: z.string().min(8),
-  turnstileToken: z.string().optional(),
 });
 
 export async function registerUser(formData: FormData) {
@@ -21,14 +19,7 @@ export async function registerUser(formData: FormData) {
     email: formData.get("email"),
     phone: formData.get("phone"),
     password: formData.get("password"),
-    turnstileToken: formData.get("turnstileToken") as string | undefined,
   });
-
-  // Verify Cloudflare Turnstile CAPTCHA
-  const turnstileResult = await verifyTurnstile(data.turnstileToken || "");
-  if (!turnstileResult.success) {
-    return { error: turnstileResult.error || "Vérification CAPTCHA échouée" };
-  }
 
   // Check existing user
   const existingUser = await db.user.findUnique({

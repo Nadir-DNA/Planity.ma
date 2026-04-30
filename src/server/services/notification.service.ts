@@ -84,7 +84,7 @@ async function sendEmailNotification(params: SendNotificationParams) {
   }
 
   await resend.emails.send({
-    from: "Planity.ma <noreply@planity.ma>",
+    from: "Planity.ma <onboarding@resend.dev>",
     to: [user.email],
     subject: params.title,
     html: params.body, // TODO: Use proper HTML template
