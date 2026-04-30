@@ -66,15 +66,16 @@ export async function PATCH(
         cancelledAt: new Date().toISOString(),
         cancelledBy: user.id,
         cancellationReason: cancellationReason || null,
+        updatedAt: new Date().toISOString(),
       })
       .eq("id", id)
       .select("*, items:BookingItem(*, service:Service(name, price, duration), staff:StaffMember(id, name)), salon:Salon(id, name, slug, city, address), payment:Payment(id, status, method)")
       .single();
 
     if (updateError) {
-      console.error("Booking cancel Supabase error:", updateError);
+      console.error("Booking cancel Supabase error:", JSON.stringify(updateError));
       return NextResponse.json(
-        { error: "Erreur lors de l'annulation" },
+        { error: "Erreur lors de l'annulation", details: updateError?.message },
         { status: 500 }
       );
     }
