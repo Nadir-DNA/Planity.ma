@@ -1,17 +1,7 @@
 import NextAuth from "next-auth";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
-import Google from "next-auth/providers/google";
 import * as bcrypt from "bcryptjs";
 import { db } from "./db";
-
-// Conditional adapter: only use PrismaAdapter when OAuth providers are configured
-// PrismaAdapter is needed for OAuth (Google) but causes issues with Credentials-only setup
-const hasOAuthProviders = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-
-// PrismaAdapter type assertion - needed for NextAuth v5 compatibility
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const adapter = hasOAuthProviders ? (PrismaAdapter(db) as any) : undefined;
 
 // Extend NextAuth types - v5 style
 declare module "next-auth" {
@@ -28,19 +18,15 @@ declare module "next-auth" {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  ...(adapter ? { adapter } : {}),
+  // No adapter — using JWT strategy with Credentials provider only.
+  // PrismaAdapter will be added back if/when Google OAuth is configured.
   session: { strategy: "jwt" },
   pages: {
     signIn: "/connexion",
     newUser: "/inscription",
   },
   providers: [
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? [Google({
-          clientId: process.env.GOOGLE_CLIENT_ID,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        })]
-      : []),
+    // Google provider will be added here when GOOGLE_CLIENT_ID/SECRET are configured
     Credentials({
       name: "credentials",
       credentials: {
