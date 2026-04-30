@@ -135,6 +135,7 @@ export async function createBooking(input: CreateBookingInput) {
       source: "ONLINE",
       status: "CONFIRMED",
       notes: data.notes || null,
+      updatedAt: new Date().toISOString(),
     })
     .select("*")
     .single();

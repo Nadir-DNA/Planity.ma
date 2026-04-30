@@ -256,6 +256,7 @@ export async function POST(request: Request) {
         source: "ONLINE",
         status: "CONFIRMED",
         notes: notes || null,
+        updatedAt: new Date().toISOString(),
       })
       .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address)")
       .single();
