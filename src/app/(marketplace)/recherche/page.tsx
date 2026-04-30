@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { RatingStars, Skeleton, Spinner } from "@/components/ui";
 import Link from "next/link";
 import { SALON_CATEGORIES, MOROCCAN_CITIES } from "@/lib/constants";
 
@@ -98,21 +99,6 @@ function SearchContent() {
   function getCategoryLabel(slug: string): string {
     const cat = SALON_CATEGORIES.find((c) => c.slug === slug.toLowerCase().replace(/_/g, "-"));
     return cat?.name || slug;
-  }
-
-  function renderStars(rating: number) {
-    return (
-      <div className="flex gap-0.5">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <Star
-            key={i}
-            className={`h-4 w-4 ${
-              i <= Math.round(rating) ? "text-amber-400 fill-amber-400" : "text-gray-300"
-            }`}
-          />
-        ))}
-      </div>
-    );
   }
 
   return (
@@ -289,8 +275,21 @@ function SearchContent() {
 
       {/* Results */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-rose-600" />
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-0">
+                <div className="flex flex-col sm:flex-row">
+                  <Skeleton className="sm:w-48 h-48 sm:h-32 rounded-t-xl sm:rounded-l-xl sm:rounded-tr-none" />
+                  <div className="flex-1 p-5 space-y-3">
+                    <Skeleton className="h-6 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                    <Skeleton className="h-4 w-1/4" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : salons.length === 0 ? (
         <Card>
@@ -331,7 +330,7 @@ function SearchContent() {
                           </div>
                         </div>
                         <div className="flex items-center">
-                          {renderStars(salon.averageRating)}
+                          <RatingStars rating={salon.averageRating} size="sm" />
                           <span className="ml-2 text-sm font-semibold">
                             {salon.averageRating.toFixed(1)}
                           </span>

@@ -1,306 +1,185 @@
-"use client";
+import { Metadata } from "next";
 
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-  Star,
-  Search,
-  Check,
-  X,
-  Loader2,
-  MessageSquare,
-  User,
-  Calendar,
-  ThumbsUp,
-  ThumbsDown,
-} from "lucide-react";
-import { toast } from "react-hot-toast";
+export const metadata: Metadata = {
+  title: "Admin - Modération avis",
+};
 
-interface Review {
-  id: string;
-  bookingId: string;
-  userId: string;
-  salonId: string;
-  overallRating: number;
-  qualityRating?: number;
-  timingRating?: number;
-  receptionRating?: number;
-  hygieneRating?: number;
-  comment?: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
-  user: {
-    name: string;
-    avatar?: string;
-  };
-  createdAt: string;
-}
-
-export default function AdminAvisPage() {
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedReview, setSelectedReview] = useState<Review | null>(null);
-
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        setLoading(true);
-        // Mock data
-        const mockReviews: Review[] = [
-          {
-            id: "r1",
-            bookingId: "b1",
-            userId: "u1",
-            salonId: "s1",
-            overallRating: 5,
-            qualityRating: 5,
-            timingRating: 4,
-            receptionRating: 5,
-            hygieneRating: 5,
-            comment: "Excellent salon ! L'équipe est très professionnelle et le résultat est parfait. Je recommande vivement.",
-            status: "PENDING",
-            user: { name: "Fatima Zahra" },
-            createdAt: "2024-03-20T14:30:00Z",
-          },
-          {
-            id: "r2",
-            bookingId: "b2",
-            userId: "u2",
-            salonId: "s1",
-            overallRating: 3,
-            qualityRating: 3,
-            timingRating: 2,
-            receptionRating: 4,
-            hygieneRating: 3,
-            comment: "Correct mais un peu long d'attente. Le résultat est satisfaisant.",
-            status: "PENDING",
-            user: { name: "Ahmed Benali" },
-            createdAt: "2024-03-18T10:15:00Z",
-          },
-          {
-            id: "r3",
-            bookingId: "b3",
-            userId: "u3",
-            salonId: "s2",
-            overallRating: 1,
-            qualityRating: 1,
-            timingRating: 1,
-            receptionRating: 2,
-            hygieneRating: 1,
-            comment: "Très déçu. Le salon était sale et le coiffeur n'a pas écouté mes demandes.",
-            status: "PENDING",
-            user: { name: "Khadija Mansouri" },
-            createdAt: "2024-03-15T16:45:00Z",
-          },
-          {
-            id: "r4",
-            bookingId: "b4",
-            userId: "u4",
-            salonId: "s2",
-            overallRating: 4,
-            qualityRating: 4,
-            timingRating: 5,
-            receptionRating: 4,
-            hygieneRating: 4,
-            comment: "Très bon moment. L'équipe est accueillante et le service est de qualité.",
-            status: "APPROVED",
-            user: { name: "Youssef El Amrani" },
-            createdAt: "2024-03-10T12:00:00Z",
-          },
-        ];
-        setReviews(mockReviews);
-      } catch (err) {
-        toast.error("Erreur de chargement");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-  }, []);
-
-  const filteredReviews = reviews.filter((review) => {
-    if (filter !== "all" && review.status !== filter.toUpperCase()) return false;
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      return (
-        review.user.name.toLowerCase().includes(q) ||
-        review.comment?.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
-
-  function handleModerate(reviewId: string, action: "APPROVED" | "REJECTED") {
-    setReviews((prev) =>
-      prev.map((r) =>
-        r.id === reviewId ? { ...r, status: action } : r
-      )
-    );
-    toast(
-      action === "APPROVED" ? "Avis approuvé" : "Avis rejeté",
-      { icon: action === "APPROVED" ? "✅" : "❌" }
-    );
-    if (selectedReview?.id === reviewId) {
-      setSelectedReview(null);
-    }
-  }
-
-  function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString("fr-FR", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  }
-
-  function renderStars(rating: number, size: "sm" | "lg" = "sm") {
-    return (
-      <div className="flex gap-0.5">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <Star
-            key={i}
-            className={`${size === "lg" ? "h-5 w-5" : "h-4 w-4"} ${
-              i <= rating ? "text-yellow-400 fill-yellow-400" : "text-gray-300"
-            }`}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-rose-600" />
-      </div>
-    );
-  }
-
+export default function AdminReviewsPage() {
   return (
-    <div className="space-y-4">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Modération des avis</h1>
-          <p className="text-sm text-gray-500">
-            {filteredReviews.length} avis à modérer
-          </p>
+      <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold text-gray-900">
+            Modération des avis
+          </h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-500">
+              12 avis en attente
+            </span>
+          </div>
         </div>
-        <div className="flex gap-2">
-          {(["pending", "approved", "rejected", "all"] as const).map((f) => (
-            <Button
-              key={f}
-              variant={filter === f ? "default" : "outline"}
-              size="sm"
-              onClick={() => setFilter(f)}
-            >
-              {f === "pending" ? "En attente" : f === "approved" ? "Approuvés" : f === "rejected" ? "Rejetés" : "Tous"}
-            </Button>
-          ))}
-        </div>
-      </div>
+      </header>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Rechercher par nom ou contenu..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
+      {/* Filters */}
+      <div className="bg-white border-b border-gray-200 px-6 py-3">
+        <div className="flex gap-2">
+          <button className="px-4 py-2 bg-gray-900 text-white rounded-md">
+            En attente
+          </button>
+          <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">
+            Approuvés
+          </button>
+          <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">
+            Refusés
+          </button>
+          <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">
+            Tous
+          </button>
+        </div>
       </div>
 
       {/* Reviews List */}
-      {filteredReviews.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6 text-center text-gray-500">
-            <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p>Aucun avis</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {filteredReviews.map((review) => (
-            <Card key={review.id}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 font-bold text-sm">
-                        {review.user.name[0]}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{review.user.name}</p>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <Calendar className="h-3 w-3" />
-                          {formatDate(review.createdAt)}
-                        </div>
-                      </div>
-                      <Badge
-                        className={
-                          review.status === "APPROVED"
-                            ? "bg-green-100 text-green-800"
-                            : review.status === "REJECTED"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
-                        }
-                      >
-                        {review.status === "APPROVED" ? "Approuvé" : review.status === "REJECTED" ? "Rejeté" : "En attente"}
-                      </Badge>
-                    </div>
-                    <div className="mb-2">
-                      {renderStars(review.overallRating)}
-                    </div>
-                    {review.comment && (
-                      <p className="text-sm text-gray-700">{review.comment}</p>
-                    )}
-                    {/* Detailed ratings */}
-                    <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                      {review.qualityRating && (
-                        <span>Qualité: {review.qualityRating}/5</span>
-                      )}
-                      {review.timingRating && (
-                        <span>Timing: {review.timingRating}/5</span>
-                      )}
-                      {review.receptionRating && (
-                        <span>Accueil: {review.receptionRating}/5</span>
-                      )}
-                      {review.hygieneRating && (
-                        <span>Hygiène: {review.hygieneRating}/5</span>
-                      )}
-                    </div>
-                  </div>
-                  {review.status === "PENDING" && (
-                    <div className="flex gap-2 ml-4">
-                      <Button
-                        size="sm"
-                        onClick={() => handleModerate(review.id, "APPROVED")}
-                      >
-                        <Check className="h-4 w-4 mr-1" />
-                        Approuver
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 hover:bg-red-50"
-                        onClick={() => handleModerate(review.id, "REJECTED")}
-                      >
-                        <X className="h-4 w-4 mr-1" />
-                        Rejeter
-                      </Button>
-                    </div>
-                  )}
+      <div className="p-6">
+        <div className="space-y-4">
+          {/* Review Card - Pending */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-medium text-gray-900">
+                    Jean Dupont
+                  </span>
+                  <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                    En attente
+                  </span>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+                <p className="text-sm text-gray-500">
+                  Salon: Coiffure Moderna • 15 avril 2026
+                </p>
+              </div>
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4].map((i) => (
+                  <svg
+                    key={i}
+                    className="h-5 w-5 text-yellow-400 fill-current"
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                  </svg>
+                ))}
+                <svg
+                  className="h-5 w-5 text-gray-300 fill-current"
+                  viewBox="0 0 20 20"
+                >
+                  <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-gray-700 mb-4">
+              Excellent service! Ma coupe est exactement comme je le voulais. 
+              Le personnel est très professionnel et accueillant. Je recommande!
+            </p>
+            <div className="flex items-center gap-3">
+              <button className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                Approuver
+              </button>
+              <button className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+                Refuser
+              </button>
+              <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">
+                Voir salon
+              </button>
+            </div>
+          </div>
+
+          {/* Review Card - Approved */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6 opacity-75">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-medium text-gray-900">
+                    Marie Laurent
+                  </span>
+                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                    Approuvé
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500">
+                  Salon: Spa Zen • 14 avril 2026
+                </p>
+              </div>
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <svg
+                    key={i}
+                    className="h-5 w-5 text-yellow-400 fill-current"
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                  </svg>
+                ))}
+              </div>
+            </div>
+            <p className="text-gray-700 mb-4">
+              Le spa est magnifique! Un vrai moment de détente. 
+              Le massage était parfait.
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">
+                Approuvé le 14 avril 2026
+              </span>
+            </div>
+          </div>
+
+          {/* Review Card - Rejected */}
+          <div className="bg-white rounded-lg border border-red-200 p-6 opacity-50">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-medium text-gray-900">
+                    User123
+                  </span>
+                  <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                    Refusé
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500">
+                  Salon: Barber Club • 12 avril 2026
+                </p>
+              </div>
+              <div className="flex items-center gap-1">
+                {[1, 2].map((i) => (
+                  <svg
+                    key={i}
+                    className="h-5 w-5 text-yellow-400 fill-current"
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                  </svg>
+                ))}
+                {[3, 4, 5].map((i) => (
+                  <svg
+                    key={i}
+                    className="h-5 w-5 text-gray-300 fill-current"
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                  </svg>
+                ))}
+              </div>
+            </div>
+            <p className="text-gray-700 mb-4">
+              Ce commentaire a été refusé pour non-respect des règles de modération.
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-red-600">
+                Refusé: Contenu inapproprié
+              </span>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

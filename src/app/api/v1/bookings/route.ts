@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { paginationSchema } from "@/lib/validations";
 import { generateBookingReference } from "@/lib/utils";
 import { sendBookingConfirmation, sendBookingCancellation } from "@/server/services/notification.service";
 
@@ -11,8 +13,12 @@ export async function GET(request: Request) {
     const userId = searchParams.get("userId");
     const salonId = searchParams.get("salonId");
     const status = searchParams.get("status");
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "20");
+    
+    // Validate pagination with Zod
+    const { page, limit } = paginationSchema.parse({
+      page: searchParams.get("page"),
+      limit: searchParams.get("limit"),
+    });
 
     const where: Record<string, unknown> = {};
     if (userId) where.userId = userId;
@@ -158,10 +164,10 @@ export async function POST(request: Request) {
       });
     });
 
-    return NextResponse.json({ booking }, { status: 201 });
-
     // Send confirmation email/SMS (non-blocking)
     sendBookingConfirmation(booking.id).catch(console.error);
+
+    return NextResponse.json({ booking }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur lors de la creation";
     console.error("Booking creation error:", error);
@@ -171,6 +177,15 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    // Check authentication
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Non autorise" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { bookingId, reason } = body;
 
@@ -181,9 +196,14 @@ export async function DELETE(request: Request) {
       );
     }
 
+    // Check ownership: user owns booking OR user owns salon
     const booking = await db.booking.findFirst({
       where: {
         id: bookingId,
+        OR: [
+          { userId: session.user.id },
+          { salon: { ownerId: session.user.id } },
+        ],
         status: { in: ["PENDING", "CONFIRMED"] },
       },
     });

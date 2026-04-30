@@ -1,0 +1,6 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#e11e48" width="32" height="32">
+  <circle cx="12" cy="10" r="8" fill="#e11e48"/>
+  <path d="M12 18l-4-8h8l-4 8z" fill="#e11e48"/>
+  <text x="12" y="11" text-anchor="middle" fill="white" font-size="6" font-weight="bold">S</text>
+</svg>

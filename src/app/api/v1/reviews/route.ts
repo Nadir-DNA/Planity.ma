@@ -1,14 +1,33 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { paginationSchema, apiValidation } from "@/lib/validations";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
+
+// Extended review schema for POST
+const createReviewSchemaExtended = z.object({
+  bookingId: z.string().min(1, "bookingId requis"),
+  salonId: z.string().min(1, "salonId requis"),
+  overallRating: z.coerce.number().int().min(1).max(5),
+  qualityRating: z.coerce.number().int().min(1).max(5).optional(),
+  timingRating: z.coerce.number().int().min(1).max(5).optional(),
+  receptionRating: z.coerce.number().int().min(1).max(5).optional(),
+  hygieneRating: z.coerce.number().int().min(1).max(5).optional(),
+  comment: z.string().min(10, "Commentaire trop court").max(1000).optional(),
+});
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const salonId = searchParams.get("salonId");
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "10");
+    
+    // Validate pagination with Zod
+    const { page, limit } = paginationSchema.parse({
+      page: searchParams.get("page"),
+      limit: searchParams.get("limit") || "10",
+    });
 
     if (!salonId) {
       return NextResponse.json(
@@ -68,29 +87,31 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const {
-      bookingId,
-      userId,
-      salonId,
-      overallRating,
-      qualityRating,
-      timingRating,
-      receptionRating,
-      hygieneRating,
-      comment,
-    } = body;
-
-    if (!bookingId || !userId || !salonId || !overallRating) {
+    // Check authentication
+    const session = await auth();
+    if (!session?.user?.id) {
       return NextResponse.json(
-        { error: "Donnees manquantes" },
+        { error: "Non autorise" },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    
+    // Validate with Zod
+    const validation = apiValidation(createReviewSchemaExtended, body);
+    if (!validation.success) {
+      return NextResponse.json(
+        { errors: validation.errors },
         { status: 400 }
       );
     }
 
+    const { bookingId, salonId, overallRating, qualityRating, timingRating, receptionRating, hygieneRating, comment } = validation.data;
+
     // Check booking exists and belongs to user
     const booking = await db.booking.findFirst({
-      where: { id: bookingId, userId, salonId, status: "COMPLETED" },
+      where: { id: bookingId, userId: session.user.id, salonId, status: "COMPLETED" },
     });
 
     if (!booking) {
@@ -115,7 +136,7 @@ export async function POST(request: Request) {
     const review = await db.review.create({
       data: {
         bookingId,
-        userId,
+        userId: session.user.id,
         salonId,
         overallRating,
         qualityRating,

@@ -1,40 +1,81 @@
-import { auth } from "./lib/auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getRateLimiter, getAuthRateLimiter, getRateLimitIdentifier, checkRateLimit } from "@/lib/rate-limit";
+
+// Routes avec rate limiting spécifique
+const AUTH_ROUTES = [
+  "/api/v1/auth/login",
+  "/api/v1/auth/register",
+  "/api/v1/auth/forgot-password",
+  "/api/v1/auth/reset-password"
+];
+const UPLOAD_ROUTES = ["/api/v1/upload", "/api/v1/salons"];
 
 export async function middleware(request: NextRequest) {
-  const session = await auth();
-  const userRole = (session?.user as { role?: string })?.role;
-
-  // Pages publiques (pas de protection)
-  const publicPages = ["/connexion", "/inscription", "/"];
-  if (publicPages.some(page => request.nextUrl.pathname === page || 
-      request.nextUrl.pathname.startsWith("/api/auth"))) {
+  const { pathname } = request.nextUrl;
+  
+  // Skip rate limiting pour les webhooks et health checks
+  if (pathname.includes("/webhook") || pathname === "/api/health") {
     return NextResponse.next();
   }
-
-  // Routes protégées par rôle
-  const protectedRoutes: Record<string, string[]> = {
-    "/pro": ["PRO_OWNER", "PRO_STAFF", "ADMIN"],
-    "/admin": ["ADMIN"],
-    "/account": ["CONSUMER", "PRO_OWNER", "PRO_STAFF", "ADMIN"],
-  };
-
-  for (const [prefix, allowedRoles] of Object.entries(protectedRoutes)) {
-    if (request.nextUrl.pathname.startsWith(prefix)) {
-      if (!session || !userRole || !allowedRoles.includes(userRole)) {
-        const url = new URL("/connexion", request.url);
-        url.searchParams.set("callbackUrl", request.nextUrl.pathname);
-        return NextResponse.redirect(url);
-      }
-    }
+  
+  // Identifier pour le rate limiting
+  const identifier = getRateLimitIdentifier(request);
+  
+  // Routes d'authentification - plus restrictif
+  if (AUTH_ROUTES.some(route => pathname.startsWith(route))) {
+    const authLimiter = getAuthRateLimiter();
+    const rateLimitResponse = await checkRateLimit(identifier, authLimiter);
+    if (rateLimitResponse) return rateLimitResponse;
   }
-
-  return NextResponse.next();
+  
+  // Routes publiques - rate limiting standard
+  if (pathname.startsWith("/api/v1/") && !AUTH_ROUTES.some(route => pathname.startsWith(route))) {
+    const limiter = getRateLimiter();
+    const rateLimitResponse = await checkRateLimit(identifier, limiter);
+    if (rateLimitResponse) return rateLimitResponse;
+  }
+  
+  // Ajouter les headers de sécurité
+  const response = NextResponse.next();
+  
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-XSS-Protection", "1; mode=block");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  
+  // CSP strict (sans unsafe-inline pour pages)
+  if (!pathname.startsWith("/api")) {
+    // Generate nonce for scripts
+    const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+    
+    response.headers.set(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        `script-src 'self' 'nonce-${nonce}' https://challenges.cloudflare.com`,
+        "style-src 'self' 'unsafe-inline'", // Tailwind needs this
+        "img-src 'self' data: https: blob: *.tile.openstreetmap.org",
+        "font-src 'self' data:",
+        "connect-src 'self' https://api.resend.com https://o448957.ingest.sentry.io",
+        "frame-src 'self' https://challenges.cloudflare.com",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "object-src 'none'",
+      ].join("; ")
+    );
+    
+    // Add nonce to request for use in pages
+    response.headers.set("x-nonce", nonce);
+  }
+  
+  return response;
 }
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|public/).*)",
   ],
 };

@@ -1,4 +1,6 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Star,
@@ -8,302 +10,348 @@ import {
   Globe,
   ChevronRight,
   Calendar,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-// Placeholder - will be replaced by DB query
-function getSalon(slug: string) {
-  return {
-    id: "1",
-    name: "Salon Elegance",
-    slug,
-    description:
-      "Salon de coiffure haut de gamme au coeur de Casablanca. Notre equipe de professionnels vous accueille dans un cadre chaleureux et moderne pour sublimer votre beaute.",
-    category: "Coiffeur",
-    address: "123 Boulevard Mohammed V",
-    city: "Casablanca",
-    phone: "+212 5XX-XXXXXX",
-    website: "https://salon-elegance.ma",
-    rating: 4.8,
-    reviewCount: 124,
-    openingHours: [
-      { day: "Lundi", hours: "09:00 - 19:00" },
-      { day: "Mardi", hours: "09:00 - 19:00" },
-      { day: "Mercredi", hours: "09:00 - 19:00" },
-      { day: "Jeudi", hours: "09:00 - 19:00" },
-      { day: "Vendredi", hours: "09:00 - 19:00" },
-      { day: "Samedi", hours: "09:00 - 20:00" },
-      { day: "Dimanche", hours: "Ferme" },
-    ],
-    services: [
-      { id: "s1", name: "Coupe femme", price: 150, duration: 45 },
-      { id: "s2", name: "Coupe homme", price: 80, duration: 30 },
-      { id: "s3", name: "Coloration", price: 300, duration: 90 },
-      { id: "s4", name: "Brushing", price: 100, duration: 30 },
-      { id: "s5", name: "Meches", price: 250, duration: 120 },
-      { id: "s6", name: "Soin capillaire", price: 200, duration: 60 },
-    ],
-    team: [
-      { id: "t1", name: "Sara M.", title: "Coiffeuse senior", avatar: null },
-      { id: "t2", name: "Karim B.", title: "Coloriste", avatar: null },
-      { id: "t3", name: "Nadia L.", title: "Coiffeuse", avatar: null },
-    ],
-    reviews: [
-      {
-        id: "r1",
-        author: "Fatima Z.",
-        rating: 5,
-        comment: "Excellent service, equipe tres professionnelle !",
-        date: "Il y a 2 jours",
-      },
-      {
-        id: "r2",
-        author: "Ahmed K.",
-        rating: 4,
-        comment: "Tres bon salon, je recommande. Un peu d'attente parfois.",
-        date: "Il y a 1 semaine",
-      },
-    ],
-  };
-}
-
-export async function generateMetadata({
-  params,
-}: {
+interface SalonPageProps {
   params: { slug: string };
-}): Promise<Metadata> {
-  const salon = getSalon(params.slug);
-  return {
-    title: `${salon.name} - ${salon.category} a ${salon.city}`,
-    description: salon.description,
-  };
 }
 
-export default function SalonPage({ params }: { params: { slug: string } }) {
-  const salon = getSalon(params.slug);
+interface MockService {
+  id: string;
+  name: string;
+  price: number;
+  duration: number;
+  description?: string;
+}
+
+interface MockStaff {
+  id: string;
+  displayName: string;
+  title?: string;
+  color: string;
+  avatar?: string;
+}
+
+interface MockReview {
+  id: string;
+  author: string;
+  overallRating: number;
+  comment: string;
+  date: string;
+}
+
+interface SalonData {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  category: string;
+  address: string;
+  city: string;
+  phone: string;
+  email: string;
+  website?: string;
+  averageRating: number;
+  reviewCount: number;
+  latitude: number;
+  longitude: number;
+  services: MockService[];
+  staff: MockStaff[];
+  openingHours: { dayOfWeek: number; openTime: string; closeTime: string; isClosed: boolean }[];
+  reviews: MockReview[];
+}
+
+const DAYS_FR = [
+  "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"
+];
+
+const CATEGORY_LABELS: Record<string, string> = {
+  COIFFEUR: "Coiffeur",
+  BARBIER: "Barbier",
+  INSTITUT_BEAUTE: "Institut de beauté",
+  SPA: "Spa & Hammam",
+  ONGLES: "Manucure & Pédicure",
+  MAQUILLAGE: "Maquillage",
+  EPILATION: "Épilation",
+  MASSAGE: "Massage",
+};
+
+export default function SalonPage({ params }: SalonPageProps) {
+  const [salon, setSalon] = useState<SalonData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchSalon() {
+      try {
+        const res = await fetch(`/api/v1/salons/${params.slug}`);
+        if (!res.ok) throw new Error("Salon introuvable");
+        const data = await res.json();
+        // Map API response to our interface
+        const s = data.salon;
+        setSalon({
+          id: s.id,
+          name: s.name,
+          slug: s.slug,
+          description: s.description || "",
+          category: s.category,
+          address: s.address,
+          city: s.city,
+          phone: s.phone || "",
+          email: s.email || "",
+          averageRating: s.averageRating || 0,
+          reviewCount: s.reviewCount || (s._count?.reviews) || 0,
+          latitude: s.latitude || 0,
+          longitude: s.longitude || 0,
+          services: (s.services || []).map((sv: MockService & { name?: string; price?: number; duration?: number }) => ({
+            id: sv.id,
+            name: sv.name,
+            price: sv.price,
+            duration: sv.duration,
+            description: sv.description,
+          })),
+          staff: (s.staff || []).map((st: MockStaff) => ({
+            id: st.id,
+            displayName: st.displayName,
+            title: st.title,
+            color: st.color,
+            avatar: st.avatar,
+          })),
+          openingHours: s.openingHours || [],
+          reviews: (s.reviews || []).map((r: MockReview & { user?: { name: string } }) => ({
+            id: r.id,
+            author: r.author || r.user?.name || "Anonyme",
+            overallRating: r.overallRating,
+            comment: r.comment,
+            date: r.date || "Récemment",
+          })),
+        });
+      } catch (err) {
+        console.error("Erreur chargement salon:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchSalon();
+  }, [params.slug]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-on-surface" />
+      </div>
+    );
+  }
+
+  if (!salon) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16 text-center">
+        <h2 className="text-2xl font-semibold text-on-surface">Salon introuvable</h2>
+        <p className="mt-2 text-on-surface-muted">Ce salon n&apos;existe pas ou a été supprimé.</p>
+        <Button className="mt-6" asChild>
+          <Link href="/recherche">Rechercher un salon</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const categoryLabel = CATEGORY_LABELS[salon.category] || salon.category;
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       {/* Breadcrumb */}
-      <nav className="flex items-center text-sm text-gray-500 mb-6">
-        <Link href="/" className="hover:text-gray-900">
+      <nav className="flex items-center text-sm text-on-surface-muted mb-6">
+        <Link href="/" className="hover:text-on-surface">
           Accueil
         </Link>
         <ChevronRight className="h-4 w-4 mx-1" />
-        <Link href={`/recherche?city=${salon.city}`} className="hover:text-gray-900">
+        <Link href={`/recherche?city=${salon.city}`} className="hover:text-on-surface">
           {salon.city}
         </Link>
         <ChevronRight className="h-4 w-4 mx-1" />
-        <span className="text-gray-900">{salon.name}</span>
+        <span className="text-on-surface">{salon.name}</span>
       </nav>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Gallery placeholder */}
-          <div className="grid grid-cols-4 gap-2 rounded-xl overflow-hidden">
-            <div className="col-span-4 sm:col-span-2 row-span-2 aspect-[4/3] bg-gradient-to-br from-rose-200 to-rose-300" />
-            <div className="hidden sm:block aspect-square bg-gradient-to-br from-rose-100 to-rose-200" />
-            <div className="hidden sm:block aspect-square bg-gradient-to-br from-rose-100 to-rose-200" />
-          </div>
+          {/* Image placeholder */}
+          <div className="aspect-[16/9] bg-surface-container-low rounded-md" />
 
           {/* Salon info */}
           <div>
             <div className="flex items-start justify-between">
               <div>
-                <Badge variant="secondary">{salon.category}</Badge>
-                <h1 className="mt-2 text-3xl font-bold text-gray-900">
+                <Badge variant="secondary" className="text-xs uppercase tracking-wider">
+                  {categoryLabel}
+                </Badge>
+                <h1 className="mt-2 text-3xl font-bold tracking-tight text-on-surface">
                   {salon.name}
                 </h1>
                 <div className="flex items-center mt-2 space-x-4">
                   <div className="flex items-center">
-                    <Star className="h-5 w-5 text-amber-400 fill-amber-400" />
-                    <span className="ml-1 font-semibold">{salon.rating}</span>
-                    <span className="ml-1 text-gray-500">
+                    <Star className="h-5 w-5 text-on-surface fill-on-surface" />
+                    <span className="ml-1 font-semibold text-on-surface">{salon.averageRating}</span>
+                    <span className="ml-1 text-on-surface-muted">
                       ({salon.reviewCount} avis)
                     </span>
                   </div>
-                  <div className="flex items-center text-gray-500">
+                  <div className="flex items-center text-on-surface-muted">
                     <MapPin className="h-4 w-4 mr-1" />
                     {salon.address}, {salon.city}
                   </div>
                 </div>
               </div>
             </div>
-            <p className="mt-4 text-gray-600">{salon.description}</p>
+            <p className="mt-4 text-on-surface-muted">{salon.description}</p>
           </div>
 
           {/* Services */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Services</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="divide-y divide-gray-100">
-                {salon.services.map((service) => (
-                  <div
-                    key={service.id}
-                    className="flex items-center justify-between py-4 first:pt-0 last:pb-0"
-                  >
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {service.name}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        <Clock className="inline h-3.5 w-3.5 mr-1" />
-                        {service.duration} min
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <span className="font-semibold text-gray-900">
-                        {service.price} DH
-                      </span>
-                      <Button size="sm" asChild>
-                        <Link
-                          href={`/reservation/${salon.id}?service=${service.id}`}
-                        >
-                          Reserver
-                        </Link>
-                      </Button>
-                    </div>
+          <div className="bg-surface-bright rounded-md border border-outline-light p-6">
+            <h2 className="text-lg font-semibold tracking-tight text-on-surface mb-4">Services</h2>
+            <div className="divide-y divide-outline-light">
+              {salon.services.filter((s) => true).map((service) => (
+                <div
+                  key={service.id}
+                  className="flex items-center justify-between py-4 first:pt-0 last:pb-0"
+                >
+                  <div>
+                    <p className="font-medium text-on-surface">{service.name}</p>
+                    {service.description && (
+                      <p className="text-sm text-on-surface-muted">{service.description}</p>
+                    )}
+                    <p className="text-xs text-on-surface-muted mt-0.5">
+                      <Clock className="inline h-3 w-3 mr-0.5" />
+                      {service.duration} min
+                    </p>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="flex items-center space-x-3">
+                    <span className="font-semibold text-on-surface">
+                      {service.price} DH
+                    </span>
+                    <Button size="sm" asChild>
+                      <Link href={`/reservation/${salon.id}?service=${service.id}`}>
+                        Réserver
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Team */}
-          <Card>
-            <CardHeader>
-              <CardTitle>L&apos;equipe</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {salon.team.map((member) => (
-                  <div key={member.id} className="text-center">
-                    <div className="mx-auto h-20 w-20 rounded-full bg-gradient-to-br from-rose-200 to-rose-300 flex items-center justify-center text-rose-700 font-bold text-lg">
-                      {member.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </div>
-                    <p className="mt-2 font-medium text-gray-900">
-                      {member.name}
-                    </p>
-                    <p className="text-sm text-gray-500">{member.title}</p>
+          <div className="bg-surface-bright rounded-md border border-outline-light p-6">
+            <h2 className="text-lg font-semibold tracking-tight text-on-surface mb-4">L&apos;équipe</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {salon.staff.map((member) => (
+                <div key={member.id} className="text-center p-3 rounded-md bg-surface-container-low">
+                  <div
+                    className="mx-auto h-14 w-14 rounded-full flex items-center justify-center text-sm font-bold text-surface-bright"
+                    style={{ backgroundColor: member.color }}
+                  >
+                    {member.displayName.split(" ").map((n) => n[0]).join("")}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <p className="mt-2 font-medium text-sm text-on-surface">{member.displayName}</p>
+                  {member.title && (
+                    <p className="text-xs text-on-surface-muted">{member.title}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Reviews */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Avis clients ({salon.reviewCount})</CardTitle>
-            </CardHeader>
-            <CardContent>
+          {salon.reviews.length > 0 && (
+            <div className="bg-surface-bright rounded-md border border-outline-light p-6">
+              <h2 className="text-lg font-semibold tracking-tight text-on-surface mb-4">
+                Avis clients ({salon.reviewCount})
+              </h2>
               <div className="space-y-6">
                 {salon.reviews.map((review) => (
-                  <div key={review.id}>
+                  <div key={review.id} className="pb-4 border-b border-outline-light last:border-0 last:pb-0">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold">
+                        <div className="h-8 w-8 rounded-full bg-surface-container-low flex items-center justify-center text-xs font-bold text-on-surface">
                           {review.author[0]}
                         </div>
-                        <span className="font-medium">{review.author}</span>
+                        <span className="font-medium text-on-surface">{review.author}</span>
                       </div>
-                      <span className="text-xs text-gray-400">
-                        {review.date}
-                      </span>
+                      <span className="text-xs text-on-surface-muted">{review.date}</span>
                     </div>
                     <div className="flex items-center mt-1">
                       {Array.from({ length: 5 }).map((_, i) => (
                         <Star
                           key={i}
                           className={`h-4 w-4 ${
-                            i < review.rating
-                              ? "text-amber-400 fill-amber-400"
-                              : "text-gray-200"
+                            i < review.overallRating
+                              ? "text-on-surface fill-on-surface"
+                              : "text-outline-light"
                           }`}
                         />
                       ))}
                     </div>
-                    <p className="mt-2 text-sm text-gray-600">
-                      {review.comment}
-                    </p>
+                    <p className="mt-2 text-sm text-on-surface-muted">{review.comment}</p>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          )}
         </div>
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* CTA */}
-          <Card className="sticky top-24">
-            <CardContent className="p-6">
-              <Button className="w-full" size="lg" asChild>
-                <Link href={`/reservation/${salon.id}`}>
-                  <Calendar className="mr-2 h-5 w-5" />
-                  Prendre rendez-vous
-                </Link>
-              </Button>
+          <div className="bg-surface-bright rounded-md border border-outline-light p-6 sticky top-24">
+            <Button className="w-full" size="lg" asChild>
+              <Link href={`/reservation/${salon.id}`}>
+                <Calendar className="mr-2 h-5 w-5" />
+                Prendre rendez-vous
+              </Link>
+            </Button>
 
-              <div className="mt-6 space-y-4">
-                <div className="flex items-center text-sm">
-                  <Phone className="h-4 w-4 mr-3 text-gray-400" />
+            <div className="mt-6 space-y-4">
+              {salon.phone && (
+                <div className="flex items-center text-sm text-on-surface-muted">
+                  <Phone className="h-4 w-4 mr-3 text-on-surface-muted" />
                   <span>{salon.phone}</span>
                 </div>
-                <div className="flex items-center text-sm">
-                  <MapPin className="h-4 w-4 mr-3 text-gray-400" />
-                  <span>
-                    {salon.address}, {salon.city}
-                  </span>
-                </div>
-                {salon.website && (
-                  <div className="flex items-center text-sm">
-                    <Globe className="h-4 w-4 mr-3 text-gray-400" />
-                    <a
-                      href={salon.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-rose-600 hover:underline"
-                    >
-                      Site web
-                    </a>
-                  </div>
-                )}
+              )}
+              <div className="flex items-center text-sm text-on-surface-muted">
+                <MapPin className="h-4 w-4 mr-3 text-on-surface-muted" />
+                <span>{salon.address}, {salon.city}</span>
               </div>
+            </div>
 
-              {/* Opening hours */}
+            {/* Opening hours */}
+            {salon.openingHours.length > 0 && (
               <div className="mt-6">
-                <h4 className="font-medium text-gray-900 mb-3">Horaires</h4>
+                <h4 className="font-medium text-on-surface mb-3">Horaires</h4>
                 <div className="space-y-2">
-                  {salon.openingHours.map((h) => (
-                    <div
-                      key={h.day}
-                      className="flex justify-between text-sm"
-                    >
-                      <span className="text-gray-500">{h.day}</span>
-                      <span
-                        className={
-                          h.hours === "Ferme"
-                            ? "text-red-500"
-                            : "text-gray-900"
-                        }
-                      >
-                        {h.hours}
-                      </span>
-                    </div>
-                  ))}
+                  {salon.openingHours
+                    .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
+                    .map((h) => (
+                      <div key={h.dayOfWeek} className="flex justify-between text-sm">
+                        <span className="text-on-surface-muted">{DAYS_FR[h.dayOfWeek]}</span>
+                        <span className={h.isClosed ? "text-red-500" : "text-on-surface"}>
+                          {h.isClosed ? "Fermé" : `${h.openTime} - ${h.closeTime}`}
+                        </span>
+                      </div>
+                    ))}
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            )}
+
+            {/* Map placeholder */}
+            <div className="mt-6">
+              <h4 className="font-medium text-on-surface mb-3">Localisation</h4>
+              <div className="h-[200px] rounded-md bg-surface-container-low flex items-center justify-center">
+                <span className="text-sm text-on-surface-muted">Carte interactive</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

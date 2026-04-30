@@ -1,48 +1,17 @@
 import Link from "next/link";
 import { Star, MapPin } from "lucide-react";
+import { MOCK_SALONS, DAYS_FR } from "@/lib/mock-data";
 
-const featuredSalons = [
-  {
-    id: "1",
-    name: "Salon Élégance",
-    slug: "salon-elegance-casablanca",
-    category: "Coiffeur",
-    city: "Casablanca",
-    rating: 4.8,
-    reviewCount: 124,
-    priceRange: "À partir de 80 DH",
-  },
-  {
-    id: "2",
-    name: "Barber House",
-    slug: "barber-house-rabat",
-    category: "Barbier",
-    city: "Rabat",
-    rating: 4.9,
-    reviewCount: 89,
-    priceRange: "À partir de 50 DH",
-  },
-  {
-    id: "3",
-    name: "Spa Zénith",
-    slug: "spa-zenith-marrakech",
-    category: "Spa & Hammam",
-    city: "Marrakech",
-    rating: 4.7,
-    reviewCount: 201,
-    priceRange: "À partir de 200 DH",
-  },
-  {
-    id: "4",
-    name: "Beauty Lounge",
-    slug: "beauty-lounge-tanger",
-    category: "Institut de beauté",
-    city: "Tanger",
-    rating: 4.6,
-    reviewCount: 156,
-    priceRange: "À partir de 120 DH",
-  },
-];
+const featuredSalons = MOCK_SALONS.slice(0, 6).map((s) => ({
+  id: s.id,
+  name: s.name,
+  slug: s.slug,
+  category: s.category.charAt(0) + s.category.slice(1).toLowerCase().replace(/_/g, " "),
+  city: s.city,
+  rating: s.averageRating,
+  reviewCount: s.reviewCount,
+  priceRange: `À partir de ${Math.min(...s.services.filter(sv => sv.isOnlineBookable).map(sv => sv.price))} DH`,
+}));
 
 export function FeaturedSalons() {
   return (
@@ -59,7 +28,7 @@ export function FeaturedSalons() {
         </div>
 
         {/* Cards — white lifted surface, ghost border */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {featuredSalons.map((salon) => (
             <Link
               key={salon.id}
@@ -67,7 +36,7 @@ export function FeaturedSalons() {
               className="group bg-surface-bright rounded-md border border-outline-light hover:border-outline-medium ambient-shadow-hover transition-all overflow-hidden"
             >
               {/* Image placeholder */}
-              <div className="aspect-[4/3] bg-surface-container-low" />
+              <div className="aspect-[16/9] bg-surface-container-low" />
 
               <div className="p-4 space-y-2">
                 {/* Category label */}

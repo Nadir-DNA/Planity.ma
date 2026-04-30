@@ -5,8 +5,23 @@ import Google from "next-auth/providers/google";
 import * as bcrypt from "bcryptjs";
 import { db } from "./db";
 
+// PrismaAdapter type assertion - needed for NextAuth v5 compatibility
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adapter = PrismaAdapter(db) as any;
+
+// Extend NextAuth types - v5 style
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      role: "CONSUMER" | "PRO_OWNER" | "PRO_STAFF" | "ADMIN";
+      locale: string;
+      email: string;
+      name?: string | null;
+      image?: string | null;
+    };
+  }
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter,
@@ -26,8 +41,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Mot de passe", type: "password" },
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async authorize(credentials: any) {
+      async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
         const user = await db.user.findUnique({
@@ -55,20 +69,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async jwt({ token, user }: any) {
+    async jwt({ token, user }) {
       if (user) {
-        token.role = user.role ?? "CONSUMER";
-        token.locale = user.locale ?? "FR";
+        // Cast user to access custom properties
+        const u = user as unknown as { role?: string; locale?: string };
+        token.role = u.role ?? "CLIENT";
+        token.locale = u.locale ?? "FR";
       }
       return token;
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async session({ session, token }: any) {
+    async session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub!;
-        session.user.role = token.role;
-        session.user.locale = token.locale;
+        session.user.role = (token as unknown as { role?: string }).role as "CONSUMER" | "PRO_OWNER" | "PRO_STAFF" | "ADMIN";
+        session.user.locale = (token as unknown as { locale?: string }).locale as string;
       }
       return session;
     },

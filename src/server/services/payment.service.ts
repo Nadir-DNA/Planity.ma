@@ -1,17 +1,17 @@
 import { db } from "@/lib/db";
+import { initDodoPayment, processCashPayment as processDodoCashPayment, processCheckPayment as processDodoCheckPayment, processRefund as processDodoRefund } from "./dodo-payment.service";
 
 /**
- * CMI (Centre Monétique Interbancaire) Payment Service for Morocco
+ * Unified Payment Service for Morocco
  * 
- * CMI is the primary payment gateway in Morocco for card payments.
- * Documentation: https://www.cmi.ma
+ * Supports multiple payment gateways:
+ * - Dodo Payment (primary, recommended)
+ * - CMI (legacy, for compatibility)
+ * - Cash/Check (in-salon)
  * 
- * Alternative payment methods in Morocco:
- * - CMI (card payments)
- * - Cash (espèces)
- * - Bank transfer (virement bancaire)
- * - Check (chèque)
- * - Mobile payment (future)
+ * Documentation:
+ * - Dodo: https://docs.dodopayments.com
+ * - CMI: https://www.cmi.ma
  */
 
 interface CreatePaymentParams {
@@ -29,59 +29,34 @@ interface PaymentResult {
 }
 
 /**
- * Initialize a CMI payment
+ * Initialize a payment (uses Dodo Payment by default)
  * 
- * CMI works via redirect:
- * 1. Create payment request
- * 2. Redirect user to CMI payment page
- * 3. CMI redirects back with result
- * 4. Verify and confirm payment
+ * For online payments, redirects to Dodo checkout.
+ * For cash/check payments, creates local record.
+ */
+export async function initPayment(params: CreatePaymentParams): Promise<PaymentResult> {
+  const { method } = params;
+
+  if (method === "CASH") {
+    return processDodoCashPayment(params);
+  }
+
+  if (method === "CHECK") {
+    return processDodoCheckPayment(params);
+  }
+
+  // Use Dodo Payment for online/card payments
+  return initDodoPayment(params);
+}
+
+/**
+ * Initialize a CMI payment (legacy, deprecated)
+ * 
+ * @deprecated Use initPayment() instead, which uses Dodo Payment
  */
 export async function initCmiPayment(params: CreatePaymentParams): Promise<PaymentResult> {
-  const { bookingId, amount, method } = params;
-
-  if (method !== "CARD" && method !== "ONLINE") {
-    return { success: false, error: "CMI only supports card/online payments" };
-  }
-
-  // Get booking details
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-    include: { salon: true, user: true },
-  });
-
-  if (!booking) {
-    return { success: false, error: "Réservation introuvable" };
-  }
-
-  if (!booking.salon.stripeAccountId) {
-    return { success: false, error: "Paiement en ligne non configuré pour ce salon" };
-  }
-
-  // Create payment record
-  const payment = await db.payment.create({
-    data: {
-      bookingId,
-      salonId: booking.salonId,
-      userId: booking.userId,
-      amount,
-      tip: params.tip || 0,
-      method,
-      type: "BOOKING_DEPOSIT",
-      status: "PENDING",
-    },
-  });
-
-  // In production, this would call CMI API
-  // For now, return a mock redirect URL
-  // CMI API: https://tpeweb.cmi.ma:8443/pci?command=paiement
-  const redirectUrl = `https://tpeweb.cmi.ma:8443/pci?command=paiement&merchant=${process.env.CMI_MERCHANT_ID}&reference=${payment.id}&montant=${amount}&devise=504`;
-
-  return {
-    success: true,
-    paymentId: payment.id,
-    redirectUrl,
-  };
+  // Redirect to Dodo payment for now
+  return initPayment(params);
 }
 
 /**
@@ -133,66 +108,20 @@ export async function handleCmiCallback(params: {
 
 /**
  * Process cash payment (in-salon)
+ * 
+ * @deprecated Use initPayment() instead
  */
 export async function processCashPayment(params: CreatePaymentParams): Promise<PaymentResult> {
-  const { bookingId, amount } = params;
-
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-  });
-
-  if (!booking) {
-    return { success: false, error: "Réservation introuvable" };
-  }
-
-  const payment = await db.payment.create({
-    data: {
-      bookingId,
-      salonId: booking.salonId,
-      userId: booking.userId,
-      amount,
-      method: "CASH",
-      type: "IN_SALON",
-      status: "SUCCEEDED",
-    },
-  });
-
-  // Update booking
-  await db.booking.update({
-    where: { id: bookingId },
-    data: { status: "COMPLETED" },
-  });
-
-  return { success: true, paymentId: payment.id };
+  return processDodoCashPayment(params);
 }
 
 /**
  * Process check payment
+ * 
+ * @deprecated Use initPayment() instead
  */
 export async function processCheckPayment(params: CreatePaymentParams): Promise<PaymentResult> {
-  const { bookingId, amount } = params;
-
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-  });
-
-  if (!booking) {
-    return { success: false, error: "Réservation introuvable" };
-  }
-
-  const payment = await db.payment.create({
-    data: {
-      bookingId,
-      salonId: booking.salonId,
-      userId: booking.userId,
-      amount,
-      method: "CHECK",
-      type: "IN_SALON",
-      status: "PENDING", // Check needs to be deposited
-    },
-  });
-
-  return { success: true, paymentId: payment.id };
+  return processDodoCheckPayment(params);
 }
 
 /**
@@ -206,36 +135,9 @@ function generateCmiHash(paymentId: string, status: string): string {
 
 /**
  * Process refund
+ * 
+ * @deprecated Use processRefund from dodo-payment.service directly
  */
 export async function processRefund(paymentId: string, amount?: number): Promise<PaymentResult> {
-  const payment = await db.payment.findUnique({
-    where: { id: paymentId },
-    include: { booking: true },
-  });
-
-  if (!payment) {
-    return { success: false, error: "Paiement introuvable" };
-  }
-
-  if (payment.status !== "SUCCEEDED") {
-    return { success: false, error: "Paiement non remboursable" };
-  }
-
-  // In production, call CMI refund API
-  // For now, just update status
-  const refundAmount = amount || payment.amount;
-  
-  await db.payment.create({
-    data: {
-      bookingId: payment.bookingId,
-      salonId: payment.salonId,
-      userId: payment.userId,
-      amount: -refundAmount, // Negative for refund
-      method: payment.method,
-      type: "REFUND",
-      status: "SUCCEEDED",
-    },
-  });
-
-  return { success: true };
+  return processDodoRefund(paymentId, amount);
 }
