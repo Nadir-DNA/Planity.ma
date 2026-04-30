@@ -445,46 +445,53 @@ export default function BookingPage() {
             <CardTitle>Récapitulatif</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between py-3 border-b">
-                <span className="text-gray-500">Services</span>
-                <div className="text-right">
+            <div className="space-y-5">
+              {/* Booking details */}
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between py-2 border-b border-[rgba(198,198,198,0.2)]">
+                  <span className="text-gray-500">Professionnel</span>
+                  <span className="font-medium text-black">
+                    {selectedStaff
+                      ? staff.find((s) => s.id === selectedStaff)?.displayName
+                      : "Premier disponible"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-[rgba(198,198,198,0.2)]">
+                  <span className="text-gray-500">Date & Heure</span>
+                  <span className="font-medium text-black">
+                    {selectedDate} à {selectedTime}
+                  </span>
+                </div>
+              </div>
+
+              {/* Price total section — Clinical Atelier */}
+              <div className="border border-[rgba(198,198,198,0.2)] rounded-md p-4 bg-[#f9f9f9]">
+                <h3 className="text-xs font-semibold tracking-widest uppercase text-gray-500 mb-3">
+                  Détail des services
+                </h3>
+                <div className="space-y-2">
                   {services
                     .filter((s) => selectedServices.includes(s.id))
                     .map((s) => (
-                      <p key={s.id} className="text-sm">
-                        {s.name} — {s.price} DH
-                      </p>
+                      <div key={s.id} className="flex items-center justify-between text-sm">
+                        <span className="text-black">{s.name}</span>
+                        <span className="text-black tabular-nums">{s.price} DH</span>
+                      </div>
                     ))}
                 </div>
-              </div>
-              <div className="flex items-center justify-between py-3 border-b">
-                <span className="text-gray-500">Professionnel</span>
-                <span>
-                  {selectedStaff
-                    ? staff.find((s) => s.id === selectedStaff)?.displayName
-                    : "Premier disponible"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-3 border-b">
-                <span className="text-gray-500">Date & Heure</span>
-                <span>
-                  {selectedDate} à {selectedTime}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-3 border-b">
-                <span className="text-gray-500">Durée</span>
-                <span>{totalDuration} min</span>
-              </div>
-              <div className="flex items-center justify-between py-3 border-b">
-                <span className="text-gray-500">Notes</span>
-                <span className="text-right max-w-xs">
-                  {notes || "—"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-3 text-lg font-bold">
-                <span>Total</span>
-                <span>{totalPrice} DH</span>
+                <div className="mt-3 pt-3 border-t border-[rgba(198,198,198,0.2)] space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">
+                      <Clock className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+                      Durée totale
+                    </span>
+                    <span className="text-black tabular-nums">{totalDuration} min</span>
+                  </div>
+                  <div className="flex items-center justify-between text-base font-bold">
+                    <span className="text-black">Total</span>
+                    <span className="text-black tabular-nums">{totalPrice} DH</span>
+                  </div>
+                </div>
               </div>
 
               {/* Notes field */}
@@ -496,13 +503,13 @@ export default function BookingPage() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  className="w-full rounded-md border border-[rgba(198,198,198,0.2)] bg-[#f9f9f9] px-3 py-2 text-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
                   placeholder="Précisez vos attentes..."
                 />
               </div>
 
               <Button
-                className="w-full"
+                className="w-full bg-black hover:bg-gray-800 text-white rounded-md"
                 size="lg"
                 onClick={submitBooking}
                 disabled={loading}
@@ -549,21 +556,67 @@ export default function BookingPage() {
         )}
       </div>
 
-      {/* Summary sidebar (mobile-bottom) */}
+      {/* Running total — sticky bottom bar (mobile) + inline summary (desktop) */}
       {selectedServices.length > 0 && step < 3 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-4 sm:hidden">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">
-                {selectedServices.length} service(s) — {totalDuration} min
-              </p>
-              <p className="font-bold">{totalPrice} DH</p>
+        <>
+          {/* Desktop: inline sticky summary card below main content */}
+          <div className="hidden sm:block mt-4">
+            <div className="sticky top-4 border border-[rgba(198,198,198,0.2)] rounded-md bg-[#f9f9f9] p-4">
+              <h3 className="text-xs font-semibold tracking-widest uppercase text-gray-500 mb-3">
+                Résumé
+              </h3>
+              <div className="space-y-1.5">
+                {services
+                  .filter((s) => selectedServices.includes(s.id))
+                  .map((s) => (
+                    <div key={s.id} className="flex items-center justify-between text-sm">
+                      <span className="text-black">{s.name}</span>
+                      <span className="text-black tabular-nums">{s.price} DH</span>
+                    </div>
+                  ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-[rgba(198,198,198,0.2)]">
+                <div className="flex items-center justify-between text-sm text-gray-500">
+                  <span>
+                    <Clock className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+                    {selectedServices.length} service{selectedServices.length > 1 ? "s" : ""} — {totalDuration} min
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-base font-bold mt-1">
+                  <span className="text-black">Total</span>
+                  <span className="text-black tabular-nums">{totalPrice} DH</span>
+                </div>
+              </div>
+              <Button
+                className="w-full mt-4 bg-black hover:bg-gray-800 text-white rounded-md"
+                size="lg"
+                onClick={() => setStep(step + 1)}
+              >
+                Continuer
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
             </div>
-            <Button onClick={() => setStep(step + 1)} size="sm">
-              Continuer
-            </Button>
           </div>
-        </div>
+
+          {/* Mobile: fixed bottom bar */}
+          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[rgba(198,198,198,0.2)] shadow-[0_-2px_10px_rgba(0,0,0,0.06)] p-4 sm:hidden z-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500 tracking-wide">
+                  {selectedServices.length} service{selectedServices.length > 1 ? "s" : ""} · {totalDuration} min
+                </p>
+                <p className="text-lg font-bold text-black tabular-nums">{totalPrice} DH</p>
+              </div>
+              <Button
+                className="bg-black hover:bg-gray-800 text-white rounded-md px-6"
+                onClick={() => setStep(step + 1)}
+              >
+                Continuer
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

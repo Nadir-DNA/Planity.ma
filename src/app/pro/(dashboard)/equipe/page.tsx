@@ -13,25 +13,27 @@ import {
   Check,
   Loader2,
   Users,
-  Calendar,
   Palette,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 
+interface Schedule {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  isWorking: boolean;
+}
+
 interface StaffMember {
   id: string;
   displayName: string;
-  title?: string;
-  bio?: string;
+  title?: string | null;
+  bio?: string | null;
   color: string;
-  avatar?: string;
+  avatar?: string | null;
   isActive: boolean;
-  schedules: {
-    dayOfWeek: number;
-    startTime: string;
-    endTime: string;
-    isWorking: boolean;
-  }[];
+  schedules: Schedule[];
+  services: { serviceId: string; service: { id: string; name: string } }[];
 }
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -44,7 +46,10 @@ export default function ProEquipePage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
+  const [deletingMember, setDeletingMember] = useState<StaffMember | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Form state
   const [form, setForm] = useState({
@@ -58,33 +63,27 @@ export default function ProEquipePage() {
       startTime: "09:00",
       endTime: "19:00",
       isWorking: i < 6,
-    })),
+    })) as Schedule[],
   });
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        setLoading(true);
-        const salonRes = await fetch("/api/v1/salons");
-        if (salonRes.ok) {
-          const salonData = await salonRes.json();
-          if (salonData.salons?.[0]) {
-            const salonId = salonData.salons[0].id;
-            const staffRes = await fetch(`/api/v1/salons/${salonId}/staff`);
-            if (staffRes.ok) {
-              const staffData = await staffRes.json();
-              setStaff(staffData.staff || []);
-            }
-          }
-        }
-      } catch (err) {
-        toast.error("Erreur de chargement");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
+    fetchStaff();
   }, []);
+
+  async function fetchStaff() {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/v1/pro/staff");
+      if (res.ok) {
+        const data = await res.json();
+        setStaff(data.staff || []);
+      }
+    } catch {
+      toast.error("Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function openCreate() {
     setEditingMember(null);
@@ -124,6 +123,11 @@ export default function ProEquipePage() {
     setShowModal(true);
   }
 
+  function openDelete(member: StaffMember) {
+    setDeletingMember(member);
+    setShowDeleteModal(true);
+  }
+
   function updateSchedule(index: number, field: string, value: string | boolean) {
     setForm((prev) => ({
       ...prev,
@@ -140,35 +144,44 @@ export default function ProEquipePage() {
     }
 
     try {
+      setSaving(true);
       if (editingMember) {
-        setStaff((prev) =>
-          prev.map((s) =>
-            s.id === editingMember.id
-              ? { ...s, ...form }
-              : s
-          )
-        );
-        toast("Membre modifié avec succès", { icon: "✅" });
+        const res = await fetch(`/api/v1/pro/staff/${editingMember.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        if (!res.ok) throw new Error("Erreur lors de la modification");
+        toast.success("Membre modifié avec succès");
       } else {
-        const newMember: StaffMember = {
-          id: `new-${Date.now()}`,
-          ...form,
-          schedules: form.schedules,
-        };
-        setStaff((prev) => [...prev, newMember]);
-        toast("Membre ajouté avec succès", { icon: "✅" });
+        const res = await fetch("/api/v1/pro/staff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        if (!res.ok) throw new Error("Erreur lors de la création");
+        toast.success("Membre ajouté avec succès");
       }
       setShowModal(false);
+      await fetchStaff();
     } catch {
       toast.error("Erreur lors de la sauvegarde");
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function handleDelete(member: StaffMember) {
-    if (!confirm(`Supprimer "${member.displayName}" ?`)) return;
+  async function handleDelete() {
+    if (!deletingMember) return;
     try {
-      setStaff((prev) => prev.filter((s) => s.id !== member.id));
-      toast("Membre supprimé", { icon: "🗑️" });
+      const res = await fetch(`/api/v1/pro/staff/${deletingMember.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Erreur lors de la suppression");
+      toast.success("Membre supprimé");
+      setShowDeleteModal(false);
+      setDeletingMember(null);
+      await fetchStaff();
     } catch {
       toast.error("Erreur lors de la suppression");
     }
@@ -187,7 +200,7 @@ export default function ProEquipePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-rose-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
       </div>
     );
   }
@@ -197,12 +210,15 @@ export default function ProEquipePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Équipe</h1>
+          <h1 className="text-2xl font-bold text-black tracking-tight">Équipe</h1>
           <p className="text-sm text-gray-500">
             {staff.filter((s) => s.isActive).length} actif{staff.filter((s) => s.isActive).length !== 1 ? "s" : ""} sur {staff.length}
           </p>
         </div>
-        <Button onClick={openCreate}>
+        <Button
+          onClick={openCreate}
+          className="bg-black text-white hover:bg-gray-800 rounded-md"
+        >
           <Plus className="h-4 w-4 mr-1" />
           Ajouter un membre
         </Button>
@@ -210,11 +226,11 @@ export default function ProEquipePage() {
 
       {/* Team Grid */}
       {staff.length === 0 ? (
-        <Card>
+        <Card className="border border-[rgba(198,198,198,0.2)] rounded-md">
           <CardContent className="pt-6 text-center text-gray-500">
             <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p>Aucun membre d'équipe</p>
-            <Button variant="outline" className="mt-4" onClick={openCreate}>
+            <p>Aucun membre d&apos;équipe</p>
+            <Button variant="outline" className="mt-4 rounded-md" onClick={openCreate}>
               Ajouter votre premier membre
             </Button>
           </CardContent>
@@ -222,7 +238,10 @@ export default function ProEquipePage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {staff.map((member) => (
-            <Card key={member.id} className={!member.isActive ? "opacity-60" : ""}>
+            <Card
+              key={member.id}
+              className={`border border-[rgba(198,198,198,0.2)] rounded-md hover:border-[rgba(198,198,198,0.4)] transition-colors ${!member.isActive ? "opacity-50" : ""}`}
+            >
               <CardContent className="p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -233,7 +252,7 @@ export default function ProEquipePage() {
                       {member.displayName[0]}
                     </div>
                     <div>
-                      <h3 className="font-medium text-gray-900">
+                      <h3 className="font-medium text-black">
                         {member.displayName}
                       </h3>
                       {member.title && (
@@ -241,7 +260,14 @@ export default function ProEquipePage() {
                       )}
                     </div>
                   </div>
-                  <Badge variant={member.isActive ? "default" : "outline"}>
+                  <Badge
+                    variant="outline"
+                    className={
+                      member.isActive
+                        ? "text-green-700 border-green-200 bg-green-50"
+                        : "text-gray-500"
+                    }
+                  >
                     {member.isActive ? "Actif" : "Inactif"}
                   </Badge>
                 </div>
@@ -254,10 +280,10 @@ export default function ProEquipePage() {
                     return (
                       <span
                         key={day}
-                        className={`text-xs px-2 py-1 rounded ${
+                        className={`text-xs px-2 py-1 rounded-md ${
                           isWorking
-                            ? "bg-green-100 text-green-700"
-                            : "bg-gray-100 text-gray-400"
+                            ? "bg-[#f9f9f9] text-black"
+                            : "bg-gray-50 text-gray-400"
                         }`}
                         title={
                           isWorking
@@ -272,21 +298,22 @@ export default function ProEquipePage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center justify-end gap-2 mt-4 pt-4 border-t">
+                <div className="flex items-center justify-end gap-1 mt-4 pt-4 border-t border-[rgba(198,198,198,0.2)]">
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="h-8 w-8 p-0 rounded-md"
                     onClick={() => openEdit(member)}
                   >
-                    <Pencil className="h-4 w-4" />
+                    <Pencil className="h-3.5 w-3.5" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-red-600 hover:bg-red-50"
-                    onClick={() => handleDelete(member)}
+                    className="h-8 w-8 p-0 rounded-md text-red-600 hover:bg-red-50"
+                    onClick={() => openDelete(member)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </CardContent>
@@ -297,11 +324,11 @@ export default function ProEquipePage() {
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-[rgba(198,198,198,0.2)] rounded-md">
             <CardContent className="pt-6 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">
+                <h2 className="text-lg font-semibold text-black">
                   {editingMember ? "Modifier le membre" : "Nouveau membre"}
                 </h2>
                 <Button variant="ghost" size="sm" onClick={() => setShowModal(false)}>
@@ -318,6 +345,7 @@ export default function ProEquipePage() {
                     placeholder="Ex: Sara Mohammed"
                     value={form.displayName}
                     onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                    className="rounded-md"
                   />
                 </div>
                 <div>
@@ -328,6 +356,7 @@ export default function ProEquipePage() {
                     placeholder="Ex: Coiffeuse senior"
                     value={form.title}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    className="rounded-md"
                   />
                 </div>
 
@@ -344,7 +373,7 @@ export default function ProEquipePage() {
                         type="button"
                         onClick={() => setForm({ ...form, color: c })}
                         className={`w-8 h-8 rounded-full transition-transform ${
-                          form.color === c ? "scale-125 ring-2 ring-offset-2 ring-gray-400" : ""
+                          form.color === c ? "scale-110 ring-2 ring-offset-2 ring-gray-400" : ""
                         }`}
                         style={{ backgroundColor: c }}
                       />
@@ -356,21 +385,20 @@ export default function ProEquipePage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-sm font-medium text-gray-700">
-                      <Calendar className="h-3.5 w-3.5 inline mr-1" />
                       Horaires hebdomadaires
                     </label>
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => toggleAllDays(true)}
-                        className="text-xs text-rose-600 hover:underline"
+                        className="text-xs text-black hover:underline"
                       >
                         Tout activer
                       </button>
                       <button
                         type="button"
                         onClick={() => toggleAllDays(false)}
-                        className="text-xs text-gray-500 hover:underline"
+                        className="text-xs text-gray-400 hover:underline"
                       >
                         Tout désactiver
                       </button>
@@ -384,7 +412,7 @@ export default function ProEquipePage() {
                             type="checkbox"
                             checked={s.isWorking}
                             onChange={(e) => updateSchedule(i, "isWorking", e.target.checked)}
-                            className="rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                            className="rounded border-gray-300 text-black focus:ring-black"
                           />
                           <span className="text-sm">{DAYS[i]}</span>
                         </label>
@@ -393,15 +421,15 @@ export default function ProEquipePage() {
                           value={s.startTime}
                           onChange={(e) => updateSchedule(i, "startTime", e.target.value)}
                           disabled={!s.isWorking}
-                          className="w-24"
+                          className="w-24 rounded-md"
                         />
-                        <span className="text-gray-400">-</span>
+                        <span className="text-gray-300">-</span>
                         <Input
                           type="time"
                           value={s.endTime}
                           onChange={(e) => updateSchedule(i, "endTime", e.target.value)}
                           disabled={!s.isWorking}
-                          className="w-24"
+                          className="w-24 rounded-md"
                         />
                       </div>
                     ))}
@@ -414,21 +442,58 @@ export default function ProEquipePage() {
                     id="isActive"
                     checked={form.isActive}
                     onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-                    className="rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                    className="rounded border-gray-300 text-black focus:ring-black"
                   />
                   <label htmlFor="isActive" className="text-sm text-gray-700">
-                    Membre actif (visible dans l'agenda)
+                    Membre actif (visible dans l&apos;agenda)
                   </label>
                 </div>
               </div>
 
-              <div className="flex gap-3 justify-end pt-4 border-t">
-                <Button variant="outline" onClick={() => setShowModal(false)}>
+              <div className="flex gap-3 justify-end pt-4 border-t border-[rgba(198,198,198,0.2)]">
+                <Button variant="outline" className="rounded-md" onClick={() => setShowModal(false)}>
                   Annuler
                 </Button>
-                <Button onClick={handleSubmit}>
-                  <Check className="h-4 w-4 mr-1" />
+                <Button
+                  onClick={handleSubmit}
+                  disabled={saving}
+                  className="bg-black text-white hover:bg-gray-800 rounded-md"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4 mr-1" />
+                  )}
                   {editingMember ? "Modifier" : "Ajouter"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && deletingMember && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-sm border border-[rgba(198,198,198,0.2)] rounded-md">
+            <CardContent className="pt-6 space-y-4">
+              <h2 className="text-lg font-semibold text-black">Supprimer le membre</h2>
+              <p className="text-sm text-gray-500">
+                Êtes-vous sûr de vouloir supprimer &ldquo;{deletingMember.displayName}&rdquo; ? Cette action est irréversible.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="outline"
+                  className="rounded-md"
+                  onClick={() => { setShowDeleteModal(false); setDeletingMember(null); }}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  onClick={handleDelete}
+                  className="bg-red-600 text-white hover:bg-red-700 rounded-md"
+                >
+                  Supprimer
                 </Button>
               </div>
             </CardContent>

@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mail, Lock, User, Phone } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { registerUser } from "@/server/actions/auth";
+
+const MA_PHONE_REGEX = /^(\+212|0)([6-7]\d{8})$/;
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -19,15 +22,34 @@ export default function RegisterPage() {
     password: "",
   });
   const [error, setError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [isPending, startTransition] = useTransition();
 
   function updateField(field: string, value: string) {
     setFormData((prev) => ({ ...prev, [field]: value }));
   }
 
+  function validatePhone(value: string): boolean {
+    const stripped = value.replace(/\s/g, "");
+    if (stripped.length === 0) {
+      setPhoneError("");
+      return true;
+    }
+    if (!MA_PHONE_REGEX.test(stripped)) {
+setPhoneError("Format invalide. Exemples : 0612345678, +212612345678");
+      return false;
+    }
+    setPhoneError("");
+    return true;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (!validatePhone(formData.phone)) {
+      return;
+    }
 
     startTransition(async () => {
       const form = new FormData();
@@ -121,13 +143,30 @@ export default function RegisterPage() {
               <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
                 type="tel"
-                placeholder="+212 6XX-XXXXXX"
-                className="pl-10"
+                placeholder="06 XX XX XX XX"
+                className={cn(
+                  "pl-10 border-[rgba(198,198,198,0.2)] focus:border-[rgba(198,198,198,0.2)] focus:ring-1 focus:ring-[rgba(198,198,198,0.4)]",
+                  phoneError && "border-[rgba(198,198,198,0.4)]"
+                )}
                 value={formData.phone}
-                onChange={(e) => updateField("phone", e.target.value)}
+                onChange={(e) => {
+                  updateField("phone", e.target.value);
+                  validatePhone(e.target.value);
+                }}
+                onBlur={() => validatePhone(formData.phone)}
                 disabled={isPending}
               />
             </div>
+            {phoneError && (
+              <p className="mt-1 text-xs text-gray-700">
+                {phoneError}
+              </p>
+            )}
+            {!phoneError && (
+              <p className="mt-1 text-xs text-gray-400">
+                Formats acceptés : 06XXXXXXXX, 07XXXXXXXX, +2126XXXXXXXX
+              </p>
+            )}
           </div>
 
           <div>

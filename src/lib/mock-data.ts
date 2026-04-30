@@ -519,6 +519,20 @@ export function getMockSalon(slug: string): MockSalon | undefined {
 }
 
 /**
+ * Check if a salon is currently open based on its opening hours.
+ */
+export function isSalonCurrentlyOpen(hours: MockOpeningHour[]): boolean {
+  const now = new Date();
+  const jsDay = now.getDay(); // 0=Sunday
+  const schemaDay = (jsDay + 6) % 7; // Convert to 0=Monday for schema
+  const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+  const todayHours = hours.find((h) => h.dayOfWeek === schemaDay);
+  if (!todayHours || todayHours.isClosed) return false;
+  return currentTime >= todayHours.openTime && currentTime <= todayHours.closeTime;
+}
+
+/**
  * Helper to search/filter salons
  */
 export function searchMockSalons(params: {
@@ -526,6 +540,10 @@ export function searchMockSalons(params: {
   city?: string;
   category?: string;
   minRating?: number;
+  minPrice?: number;
+  maxPrice?: number;
+  isVerified?: boolean;
+  isOpen?: boolean;
   sortBy?: string;
   page?: number;
   limit?: number;
@@ -535,6 +553,10 @@ export function searchMockSalons(params: {
     city = "",
     category = "",
     minRating = 0,
+    minPrice = 0,
+    maxPrice = 0,
+    isVerified = false,
+    isOpen = false,
     sortBy = "relevance",
     page = 1,
     limit = 20,
@@ -547,8 +569,11 @@ export function searchMockSalons(params: {
   }
 
   if (category) {
-    const cat = category.toUpperCase().replace(/-/g, "_");
-    results = results.filter((s) => s.category === cat);
+    const cats = category
+      .split(",")
+      .map((c) => c.toUpperCase().replace(/-/g, "_").trim())
+      .filter(Boolean);
+    results = results.filter((s) => cats.includes(s.category));
   }
 
   if (query) {
@@ -563,6 +588,30 @@ export function searchMockSalons(params: {
 
   if (minRating > 0) {
     results = results.filter((s) => s.averageRating >= minRating);
+  }
+
+  if (isVerified) {
+    results = results.filter((s) => s.isVerified);
+  }
+
+  if (minPrice > 0 || maxPrice > 0) {
+    results = results.filter((s) => {
+      const activeServices = s.services.filter((svc) => svc.isActive);
+      return activeServices.some((svc) => {
+        if (minPrice > 0 && maxPrice > 0) {
+          return svc.price >= minPrice && svc.price <= maxPrice;
+        } else if (minPrice > 0) {
+          return svc.price >= minPrice;
+        } else if (maxPrice > 0) {
+          return svc.price <= maxPrice;
+        }
+        return true;
+      });
+    });
+  }
+
+  if (isOpen) {
+    results = results.filter((s) => isSalonCurrentlyOpen(s.openingHours));
   }
 
   switch (sortBy) {
