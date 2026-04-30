@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
@@ -10,14 +10,14 @@ const VALID_NOTIFICATION_KEYS = [
 
 type NotificationKey = (typeof VALID_NOTIFICATION_KEYS)[number];
 
-export async function PATCH(req: NextRequest) {
+export async function PATCH(request: Request) {
   try {
-    const authUser = await getUser();
+    const authUser = await getUser(request);
     if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const body = await request.json();
 
     // Validate keys
     const updateData: Record<string, boolean> = {};

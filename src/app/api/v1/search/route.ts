@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 // CRIT-02 FIX: Strip PII fields from salon data
 function stripSalonPII(salon: Record<string, unknown>) {
-  const { ownerId, passwordHash, ...safe } = salon as Record<string, unknown>;
+  const { ownerId, passwordHash, email, phone, ...safe } = salon as Record<string, unknown>;
   return safe;
 }
 

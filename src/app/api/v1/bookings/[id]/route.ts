@@ -9,7 +9,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json(
         { error: "Authentification requise" },
@@ -98,7 +98,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json(
         { error: "Authentification requise" },

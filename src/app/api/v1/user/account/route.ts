@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
-    const authUser = await getUser();
+    const authUser = await getUser(request);
     if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }

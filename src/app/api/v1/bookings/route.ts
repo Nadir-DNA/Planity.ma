@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     // CRIT-01 FIX: Require authentication — only fetch own bookings
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json(
         { error: "Authentification requise" },
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     // Verify authentication
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json(
         { error: "Authentification requise" },
@@ -294,7 +294,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     // Check authentication
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json(
         { error: "Non autorise" },

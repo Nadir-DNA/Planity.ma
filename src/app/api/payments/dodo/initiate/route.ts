@@ -9,7 +9,7 @@ import { initDodoPayment } from "@/server/services/dodo-payment.service";
  */
 export async function POST(request: NextRequest) {
   try {
-    const user = await getUser();
+    const user = await getUser(request);
 
     if (!user?.id) {
       return NextResponse.json(

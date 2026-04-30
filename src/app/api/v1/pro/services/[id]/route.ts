@@ -7,7 +7,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
@@ -101,7 +101,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }

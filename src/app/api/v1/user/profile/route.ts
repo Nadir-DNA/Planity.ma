@@ -1,15 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 
-export async function PATCH(req: NextRequest) {
+export async function PATCH(request: Request) {
   try {
-    const authUser = await getUser();
+    const authUser = await getUser(request);
     if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const body = await request.json();
     const { name, phone, locale } = body;
 
     // Validate
@@ -78,9 +78,9 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const authUser = await getUser();
+    const authUser = await getUser(request);
     if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }

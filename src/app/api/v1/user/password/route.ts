@@ -1,16 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import * as bcrypt from "bcryptjs";
 
-export async function PATCH(req: NextRequest) {
+export async function PATCH(request: Request) {
   try {
-    const authUser = await getUser();
+    const authUser = await getUser(request);
     if (!authUser?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const body = await request.json();
     const { currentPassword, newPassword } = body;
 
     if (!currentPassword || !newPassword) {

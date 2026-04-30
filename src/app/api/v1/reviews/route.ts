@@ -98,7 +98,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     // Check authentication
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json(
         { error: "Non autorise" },

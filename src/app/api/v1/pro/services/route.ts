@@ -4,9 +4,9 @@ import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
@@ -52,7 +52,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const user = await getUser();
+    const user = await getUser(request);
     if (!user?.id) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
