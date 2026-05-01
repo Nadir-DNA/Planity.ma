@@ -16,9 +16,10 @@ export async function POST(request: Request) {
     // Simple auth check — accept CRON_SECRET or AUTH_SECRET for flexibility
     const authSecret = request.headers.get("x-auth-secret");
     const validSecret = process.env.CRON_SECRET || process.env.AUTH_SECRET;
+    console.log(`[Reminders] Auth check: received=${authSecret ? 'yes' : 'no'}, validSecret=${validSecret ? 'yes' : 'no'}, match=${authSecret === validSecret}`);
     if (authSecret !== validSecret) {
       return NextResponse.json(
-        { error: "Non autorise" },
+        { error: "Non autorise", debug: { receivedAuth: !!authSecret, hasValidSecret: !!validSecret } },
         { status: 401 }
       );
     }
