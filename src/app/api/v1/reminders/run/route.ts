@@ -13,9 +13,10 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request) {
   try {
-    // Simple auth check
+    // Simple auth check — accept CRON_SECRET or AUTH_SECRET for flexibility
     const authSecret = request.headers.get("x-auth-secret");
-    if (authSecret !== process.env.CRON_SECRET) {
+    const validSecret = process.env.CRON_SECRET || process.env.AUTH_SECRET;
+    if (authSecret !== validSecret) {
       return NextResponse.json(
         { error: "Non autorise" },
         { status: 401 }
@@ -37,4 +38,3 @@ export async function POST(request: Request) {
     );
   }
 }
-# v2
