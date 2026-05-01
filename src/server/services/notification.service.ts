@@ -148,7 +148,7 @@ export async function sendBookingConfirmation(bookingId: string) {
   }
 }
 
-export async function sendBookingReminder(bookingId: string) {
+export async function sendBookingReminder(bookingId: string, isUrgent = false) {
   const { data: booking, error } = await supabaseAdmin
     .from("Booking")
     .select(`*, user:User!userId(*), salon:Salon!salonId(*)`)
@@ -161,17 +161,31 @@ export async function sendBookingReminder(bookingId: string) {
   if (b.status !== "CONFIRMED") return;
 
   const startTime = new Date(b.startTime as string);
+  const dateStr = startTime.toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
   const timeStr = startTime.toLocaleTimeString("fr-FR", {
     hour: "2-digit",
     minute: "2-digit",
   });
+  const salonName = ((b.salon as Record<string, unknown>)?.name ?? "") as string;
 
   await createNotification({
     userId: b.userId as string,
     type: "BOOKING_REMINDER",
-    channel: "SMS",
-    title: "Rappel de rendez-vous",
-    body: `Rappel: votre rendez-vous chez ${(b.salon as Record<string, unknown>)?.name} est aujourd'hui à ${timeStr}. Ref: ${b.reference}`,
+    channel: "EMAIL",
+    title: isUrgent
+      ? `⏰ Rappel : votre RDV chez ${salonName} dans 1h`
+      : `📋 Rappel : votre RDV chez ${salonName} demain`,
+    body: generateBookingReminderEmail({
+      salonName,
+      date: dateStr,
+      time: timeStr,
+      reference: b.reference as string,
+      isUrgent,
+    }),
     data: { bookingId },
   });
 }
@@ -224,6 +238,106 @@ export async function sendBookingCancellation(bookingId: string) {
 // ============================================================
 // EMAIL TEMPLATES (HTML)
 // ============================================================
+
+function generateBookingReminderEmail(params: {
+  salonName: string;
+  date: string;
+  time: string;
+  reference: string;
+  isUrgent: boolean;
+}): string {
+  const accentColor = params.isUrgent ? "#f59e0b" : "#000000";
+  const headerText = params.isUrgent
+    ? "⏰ Rappel — Votre rendez-vous dans 1h"
+    : "📋 Rappel — Votre rendez-vous demain";
+  const subtitleText = params.isUrgent
+    ? "N'oubliez pas votre rendez-vous tout à l'heure !"
+    : "On vous rappelle votre rendez-vous de demain.";
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${headerText}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f5f5f5;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td style="padding: 40px 20px;">
+        <table role="presentation" style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #e5e5e5;">
+          <!-- Header -->
+          <tr>
+            <td style="background: ${accentColor}; padding: 28px 32px; text-align: left;">
+              <h1 style="margin: 0; color: ${params.isUrgent ? '#000' : '#fff'}; font-size: 20px; font-weight: 600;">${headerText}</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding: 32px;">
+              <p style="margin: 0 0 24px; font-size: 15px; color: #374151;">
+                ${subtitleText}
+              </p>
+              
+              <!-- Details -->
+              <table role="presentation" style="width: 100%; border-collapse: collapse; background: #f9f9f9; border-radius: 6px;">
+                <tr>
+                  <td style="padding: 14px 18px; border-bottom: 1px solid #e5e5e5; width: 80px;">
+                    <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Salon</span>
+                  </td>
+                  <td style="padding: 14px 18px; border-bottom: 1px solid #e5e5e5;">
+                    <span style="font-weight: 600; color: #111827;">${params.salonName}</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 18px; border-bottom: 1px solid #e5e5e5;">
+                    <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Date</span>
+                  </td>
+                  <td style="padding: 14px 18px; border-bottom: 1px solid #e5e5e5;">
+                    <span style="font-weight: 600; color: #111827;">${params.date}</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 18px; border-bottom: 1px solid #e5e5e5;">
+                    <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Heure</span>
+                  </td>
+                  <td style="padding: 14px 18px; border-bottom: 1px solid #e5e5e5;">
+                    <span style="font-weight: 700; color: #000; font-size: 18px;">${params.time}</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 18px;">
+                    <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Réf.</span>
+                  </td>
+                  <td style="padding: 14px 18px;">
+                    <span style="font-family: monospace; color: #6b7280; font-size: 13px;">${params.reference}</span>
+                  </td>
+                </tr>
+              </table>
+              
+              ${params.isUrgent ? `<p style="margin: 24px 0 0; font-size: 14px; color: #6b7280;">
+                Si vous ne pouvez pas venir, merci d'annuler votre rendez-vous sur <a href="https://www.planity.ma" style="color: #000;">Planity.ma</a>.
+              </p>` : `<p style="margin: 24px 0 0; font-size: 14px; color: #6b7280;">
+                Vous recevrez un autre rappel 1h avant votre rendez-vous.
+              </p>`}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 32px; background: #f9f9f9; text-align: center; border-top: 1px solid #e5e5e5;">
+              <p style="margin: 0; font-size: 11px; color: #9ca3af;">
+                Planity.ma — Réservation beauté & bien-être au Maroc
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+}
 
 function generateBookingConfirmationEmail(params: {
   salonName: string;
