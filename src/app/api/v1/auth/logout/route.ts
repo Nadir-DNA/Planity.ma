@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   try {
-    // Get the access token from cookies
+    // Get all possible auth cookie names (both old and new naming)
     const cookieHeader = request.headers.get("cookie") || "";
     const cookies = Object.fromEntries(
       cookieHeader.split(";").map((c) => {
@@ -12,36 +12,43 @@ export async function POST(request: Request) {
       })
     );
 
-    const accessToken = cookies["sb-access-token"];
+    // Determine project ref for cookie naming
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
+    const accessTokenName = `${projectRef}-auth-token`;
 
-    if (!accessToken) {
-      return NextResponse.json({ success: true });
-    }
+    // Try new cookie name first, fall back to old
+    const accessToken =
+      cookies[accessTokenName] ||
+      cookies[`${accessTokenName}.code`] ||
+      cookies["sb-access-token"];
 
-    // Sign out from Supabase (invalidates the session)
-    const { error } = await supabaseAdmin.auth.admin.signOut(accessToken);
-
-    if (error) {
-      console.error("Supabase signOut error:", error.message);
-      // Still clear cookies locally even if server-side signout fails
+    if (accessToken) {
+      // Sign out from Supabase (invalidates the session)
+      const { error } = await supabaseAdmin.auth.admin.signOut(accessToken);
+      if (error) {
+        console.error("Supabase signOut error:", error.message);
+      }
     }
 
     const response = NextResponse.json({ success: true });
 
-    // Clear auth cookies
-    response.cookies.set("sb-access-token", "", {
-      path: "/",
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 0,
-    });
-    response.cookies.set("sb-refresh-token", "", {
-      path: "/",
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 0,
+    // Clear ALL possible auth cookies (both naming conventions)
+    const allCookieNames = [
+      accessTokenName,
+      `${accessTokenName}.code`,
+      "sb-access-token",
+      "sb-refresh-token",
+    ];
+
+    allCookieNames.forEach((name) => {
+      response.cookies.set(name, "", {
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: 0,
+      });
     });
 
     return response;

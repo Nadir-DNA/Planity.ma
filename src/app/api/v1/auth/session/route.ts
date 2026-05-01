@@ -1,18 +1,33 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
+// Helper to get auth cookies with both naming conventions
+function getAuthCookie(request: Request, name: string): string | undefined {
+  const cookieHeader = request.headers.get("cookie") || "";
+  const cookies = Object.fromEntries(
+    cookieHeader.split(";").map((c) => {
+      const [n, ...rest] = c.trim().split("=");
+      return [n, rest.join("=")];
+    })
+  );
+  return cookies[name];
+}
+
 export async function GET(request: Request) {
   try {
-    const cookieHeader = request.headers.get("cookie") || "";
-    const cookies = Object.fromEntries(
-      cookieHeader.split(";").map((c) => {
-        const [name, ...rest] = c.trim().split("=");
-        return [name, rest.join("=")];
-      })
-    );
+    // Determine project ref for cookie naming
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
+    const accessTokenName = `${projectRef}-auth-token`;
 
-    const accessToken = cookies["sb-access-token"];
-    const refreshToken = cookies["sb-refresh-token"];
+    // Try new Supabase SSR cookie name first, fall back to old
+    let accessToken =
+      getAuthCookie(request, accessTokenName) ||
+      getAuthCookie(request, "sb-access-token");
+
+    let refreshToken =
+      getAuthCookie(request, `${accessTokenName}.code`) ||
+      getAuthCookie(request, "sb-refresh-token");
 
     if (!accessToken) {
       return NextResponse.json({ user: null });
@@ -50,14 +65,37 @@ export async function GET(request: Request) {
           },
         });
 
-        // Update cookies with new tokens
+        // Update cookies with new tokens (using both naming conventions for compatibility)
         if (refreshData.session) {
+          // New SSR-style cookies
+          response.cookies.set(accessTokenName, refreshData.session.access_token, {
+            path: "/",
+            httpOnly: true,
+            secure: true,
+            sameSite: "lax",
+            maxAge: refreshData.session.expires_in,
+          });
+          response.cookies.set(`${accessTokenName}.code`, refreshData.session.refresh_token, {
+            path: "/",
+            httpOnly: true,
+            secure: true,
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 365,
+          });
+          // Old-style cookies for backwards compatibility
           response.cookies.set("sb-access-token", refreshData.session.access_token, {
             path: "/",
             httpOnly: true,
             secure: true,
             sameSite: "lax",
             maxAge: refreshData.session.expires_in,
+          });
+          response.cookies.set("sb-refresh-token", refreshData.session.refresh_token, {
+            path: "/",
+            httpOnly: true,
+            secure: true,
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 365,
           });
         }
 

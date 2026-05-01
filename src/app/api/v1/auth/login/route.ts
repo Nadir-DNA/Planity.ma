@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Step 1: Verify credentials against our Supabase DB (REST API, works from Vercel)
+    // Step 1: Verify credentials against our Supabase DB
     const { data: users, error: dbError } = await supabaseAdmin
       .from("User")
       .select("id, email, name, role, locale, passwordHash")
@@ -54,14 +54,13 @@ export async function POST(request: Request) {
 
     if (signInError) {
       console.error("Supabase signInWithPassword error:", signInError.message);
-      // Auth sign-in failed, return error
       return NextResponse.json(
         { error: "Erreur de connexion" },
         { status: 500 },
       );
     }
 
-    // Step 3: Create response with user data and set auth cookies
+    // Step 3: Create response with user data
     const response = NextResponse.json({
       user: {
         id: user.id,
@@ -72,8 +71,32 @@ export async function POST(request: Request) {
       },
     });
 
-    // Set Supabase auth cookies on the response
+    // Step 4: Set Supabase auth cookies using BOTH naming conventions
+    // - SSR-style: {projectRef}-auth-token (read by middleware updateSession)
+    // - Legacy: sb-access-token / sb-refresh-token (read by session API)
     if (authData.session) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
+      const accessTokenName = `${projectRef}-auth-token`;
+      const expiresTokenName = `${projectRef}-auth-token.code`;
+
+      // SSR-style cookies (what the middleware reads)
+      response.cookies.set(accessTokenName, authData.session.access_token, {
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: authData.session.expires_in,
+      });
+      response.cookies.set(expiresTokenName, authData.session.refresh_token, {
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+
+      // Legacy cookies (what session API and auth-context read)
       response.cookies.set("sb-access-token", authData.session.access_token, {
         path: "/",
         httpOnly: true,
@@ -86,7 +109,7 @@ export async function POST(request: Request) {
         httpOnly: true,
         secure: true,
         sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365, // 1 year
+        maxAge: 60 * 60 * 24 * 365,
       });
     }
 
