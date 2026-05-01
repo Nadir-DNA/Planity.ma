@@ -32,7 +32,12 @@ export async function GET(request: Request) {
     // Always filter by authenticated user's ID (ignore client-sent userId)
     let query = supabaseAdmin
       .from("Booking")
-      .select("*", { count: "exact" })
+      .select(`
+        *,
+        salon:Salon!salonId(id, name, slug, city, address),
+        items:BookingItem(id, startTime, endTime, price, service:Service!serviceId(id, name, price, duration), staff:StaffMember!staffId(id, displayName)),
+        payment:Payment(id, status, method)
+      `, { count: "exact" })
       .eq("userId", user.id)
       .order("startTime", { ascending: false })
       .range((page - 1) * limit, (page - 1) * limit + limit - 1);

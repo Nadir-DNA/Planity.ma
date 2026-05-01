@@ -312,7 +312,7 @@ export default function AppointmentsPage() {
         <div className="space-y-4">
           {filteredBookings.map((booking) => {
             const config = statusConfig[booking.status];
-            const services = booking.items.map((i) => i.service.name);
+            const services = (booking.items || []).map((i) => i.service?.name || "Service").filter(Boolean);
             const duration = getDuration(booking.startTime, booking.endTime);
             const isActive = booking.status === "CONFIRMED" || booking.status === "PENDING";
 
@@ -327,10 +327,10 @@ export default function AppointmentsPage() {
                     <div className="space-y-2 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Link
-                          href={`/etablissement/${booking.salon.slug}`}
+                          href={`/etablissement/${booking.salon?.slug || ''}`}
                           className="font-semibold text-gray-900 hover:underline"
                         >
-                          {booking.salon.name}
+                          {booking.salon?.name || "Salon"}
                         </Link>
                         <Badge className={`${config.className} rounded-md text-xs font-medium border-0`}>
                           {config.label}
@@ -350,7 +350,7 @@ export default function AppointmentsPage() {
                         </span>
                         <span className="flex items-center">
                           <MapPin className="h-3.5 w-3.5 mr-1" />
-                          {booking.salon.city}
+                          {booking.salon?.city || ""}
                         </span>
                       </div>
                     </div>
