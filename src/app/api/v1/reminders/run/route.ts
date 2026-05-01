@@ -9,17 +9,15 @@ export const dynamic = "force-dynamic";
  * Trigger booking reminders (24h and 1h before appointments).
  * Should be called by a cron job every hour.
  *
- * Requires AUTH_SECRET header for security.
+ * Requires x-auth-secret header matching CRON_SECRET or AUTH_SECRET.
  */
 export async function POST(request: Request) {
   try {
-    // Simple auth check — accept CRON_SECRET or AUTH_SECRET for flexibility
     const authSecret = request.headers.get("x-auth-secret");
     const validSecret = process.env.CRON_SECRET || process.env.AUTH_SECRET;
-    console.log(`[Reminders] Auth debug: authSecret=${authSecret?.substring(0,6)}..., validSecret=${validSecret?.substring(0,6)}..., match=${authSecret === validSecret}`);
     if (authSecret !== validSecret) {
       return NextResponse.json(
-        { error: "Non autorise", debug: { receivedAuth: !!authSecret, hasValidSecret: !!validSecret } },
+        { error: "Non autorise" },
         { status: 401 }
       );
     }
