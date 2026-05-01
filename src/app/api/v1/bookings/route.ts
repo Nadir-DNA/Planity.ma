@@ -264,24 +264,20 @@ export async function POST(request: Request) {
       attempts++;
     }
 
-    // Check availability for each service/staff combo
+    // Check availability for each service/staff combo — prevent double booking
     for (const svc of resolvedServices) {
-      const { data: conflicting } = await supabaseAdmin
-        .from("BookingItem")
-        .select("id")
-        .eq("staffId", svc.staffId)
-        .lt("startTime", endTime.toISOString())
-        .gt("endTime", startTime.toISOString())
-        .in("booking.status", ["PENDING", "CONFIRMED", "IN_PROGRESS"]);
+      const svcService = dbServices.find((s: { id: string }) => s.id === svc.serviceId);
+      const svcDuration = svcService?.duration || 30;
+      const svcStartTime = new Date(startTime.getTime() + resolvedServices.indexOf(svc) * svcDuration * 60000);
+      const svcEndTime = new Date(svcStartTime.getTime() + svcDuration * 60000);
 
-      // Since Supabase doesn't easily join-filter on Booking status for BookingItem,
-      // we need to fetch items then filter manually
+      // Fetch potential conflicts from BookingItem
       const { data: potentialConflicts } = await supabaseAdmin
         .from("BookingItem")
-        .select("id, booking:Booking(status)")
+        .select("id, startTime, endTime, booking:Booking(status)")
         .eq("staffId", svc.staffId)
-        .lt("startTime", endTime.toISOString())
-        .gt("endTime", startTime.toISOString());
+        .lt("startTime", svcEndTime.toISOString())
+        .gt("endTime", svcStartTime.toISOString());
 
       const hasConflict = potentialConflicts?.some(
         (item: Record<string, unknown>) => {
