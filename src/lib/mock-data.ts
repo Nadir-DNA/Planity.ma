@@ -527,8 +527,8 @@ export const MOCK_SALONS: MockSalon[] = [
 /**
  * Helper to find a salon by slug
  */
-export function getMockSalon(slug: string): MockSalon | undefined {
-  return MOCK_SALONS.find((s) => s.slug === slug);
+export function getMockSalon(slugOrId: string): MockSalon | undefined {
+  return MOCK_SALONS.find((s) => s.slug === slugOrId || s.id === slugOrId);
 }
 
 /**

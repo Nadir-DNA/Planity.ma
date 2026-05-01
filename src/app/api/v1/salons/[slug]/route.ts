@@ -6,14 +6,15 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   request: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const { slug } = params;
+    const { slug } = await params;
 
-    // Try Supabase first
+    // Try Supabase first — search by slug OR id
     try {
-      const { data: salon, error } = await supabaseAdmin
+      // Try by slug first
+      const { data: salonBySlug, error: slugError } = await supabaseAdmin
         .from("Salon")
         .select(`
           *,
@@ -27,16 +28,35 @@ export async function GET(
         .eq("isActive", true)
         .single();
 
-      if (salon && !error) {
-        // Strip PII from salon response
-        const { email, phone, ownerId, ...safeSalon } = salon;
+      if (salonBySlug && !slugError) {
+        const { email, phone, ownerId, ...safeSalon } = salonBySlug;
+        return NextResponse.json({ salon: safeSalon });
+      }
+
+      // Fallback: try by id
+      const { data: salonById, error: idError } = await supabaseAdmin
+        .from("Salon")
+        .select(`
+          *,
+          services:Service(id, name, description, price, duration, isActive, isOnlineBookable, order),
+          staff:StaffMember(id, displayName, title, color, avatar, bio, isActive, order),
+          openingHours:SalonSchedule(id, dayOfWeek, openTime, closeTime, isClosed),
+          reviews:Review(id, author, overallRating, comment, date, status),
+          photos:SalonPhoto(id, url, alt, order)
+        `)
+        .eq("id", slug)
+        .eq("isActive", true)
+        .single();
+
+      if (salonById && !idError) {
+        const { email, phone, ownerId, ...safeSalon } = salonById;
         return NextResponse.json({ salon: safeSalon });
       }
     } catch {
       // Supabase not available, fall through to mock
     }
 
-    // Fallback: mock data
+    // Fallback: mock data (searches by slug OR id)
     const mockSalon = getMockSalon(slug);
 
     if (!mockSalon) {

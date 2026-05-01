@@ -6,39 +6,60 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   _request: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const slug = params.slug;
+    const { slug } = await params;
 
-    // Try Supabase first
-    const { data: salonData, error: salonError } = await supabaseAdmin
-      .from("Salon")
-      .select("id")
-      .eq("slug", slug)
-      .eq("isActive", true)
-      .single();
-
-    if (salonData && !salonError) {
-      const { data: staff, error: staffError } = await supabaseAdmin
-        .from("StaffMember")
-        .select("id, displayName, title, color, avatar, bio, isActive")
-        .eq("salonId", salonData.id)
+    // Try Supabase first — search by slug OR id
+    try {
+      // Try by slug
+      const { data: salonBySlug, error: slugError } = await supabaseAdmin
+        .from("Salon")
+        .select("id")
+        .eq("slug", slug)
         .eq("isActive", true)
-        .order("order", { ascending: true });
+        .single();
 
-      if (staffError) {
-        console.error("Staff fetch error:", staffError);
-        return NextResponse.json(
-          { error: "Erreur lors du chargement de l\'équipe" },
-          { status: 500 }
-        );
+      let salonId = salonBySlug?.id;
+
+      // If slug not found, try by id
+      if (!salonId) {
+        const { data: salonById, error: idError } = await supabaseAdmin
+          .from("Salon")
+          .select("id")
+          .eq("id", slug)
+          .eq("isActive", true)
+          .single();
+
+        if (salonById && !idError) {
+          salonId = salonById.id;
+        }
       }
 
-      return NextResponse.json({ staff });
+      if (salonId) {
+        const { data: staff, error: staffError } = await supabaseAdmin
+          .from("StaffMember")
+          .select("id, displayName, title, color, avatar, bio, isActive")
+          .eq("salonId", salonId)
+          .eq("isActive", true)
+          .order("order", { ascending: true });
+
+        if (staffError) {
+          console.error("Staff fetch error:", staffError);
+          return NextResponse.json(
+            { error: "Erreur lors du chargement de l'équipe" },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.json({ staff });
+      }
+    } catch {
+      // Supabase not available, fall through to mock
     }
 
-    // Fallback to mock data
+    // Fallback to mock data (searches by slug OR id)
     const mockSalon = getMockSalon(slug);
     if (!mockSalon) {
       return NextResponse.json(
@@ -57,7 +78,7 @@ export async function GET(
   } catch (error) {
     console.error("Staff fetch error:", error);
     return NextResponse.json(
-      { error: "Erreur lors du chargement de l\'équipe" },
+      { error: "Erreur lors du chargement de l'équipe" },
       { status: 500 }
     );
   }
