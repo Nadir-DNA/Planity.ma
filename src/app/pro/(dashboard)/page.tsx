@@ -42,15 +42,17 @@ interface Booking {
 export default function ProDashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
+  const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
-        const [statsRes, bookingsRes] = await Promise.all([
+        const [statsRes, bookingsRes, upcomingRes] = await Promise.all([
           fetch("/api/v1/pro/stats"),
           fetch(`/api/v1/pro/bookings?date=${new Date().toISOString().split("T")[0]}`),
+          fetch("/api/v1/pro/bookings"),
         ]);
 
         if (statsRes.ok) {
@@ -63,6 +65,11 @@ export default function ProDashboardPage() {
         if (bookingsRes.ok) {
           const bookingsData = await bookingsRes.json();
           setTodayBookings(bookingsData.bookings || []);
+        }
+
+        if (upcomingRes.ok) {
+          const upcomingData = await upcomingRes.json();
+          setUpcomingBookings((upcomingData.bookings || []).slice(0, 5));
         }
       } catch {
         toast.error("Erreur de connexion");
@@ -202,6 +209,81 @@ export default function ProDashboardPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Upcoming Bookings */}
+      {upcomingBookings.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-black mb-3">
+            Prochains rendez-vous
+          </h2>
+          <div className="space-y-2">
+            {upcomingBookings.map((booking) => (
+              <Card
+                key={booking.id}
+                className="border border-[rgba(198,198,198,0.2)] rounded-md hover:border-[rgba(198,198,198,0.4)] transition-colors"
+              >
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="text-center min-w-[50px]">
+                        <p className="text-sm font-bold text-black">
+                          {formatTime(booking.startTime)}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {formatTime(booking.endTime)}
+                        </p>
+                      </div>
+                      <div className="w-px h-10 bg-[rgba(198,198,198,0.2)]" />
+                      <div>
+                        <p className="font-medium text-black text-sm">
+                          {booking.user?.name || "Client"}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {(booking.items || []).map((i) => i.service?.name || "Service").join(", ")}
+                        </p>
+                        {booking.items?.[0]?.staff && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <div
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: booking.items[0].staff.color }}
+                            />
+                            <span className="text-xs text-gray-400">
+                              {booking.items[0].staff.displayName}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-md ${
+                          booking.status === "CONFIRMED"
+                            ? "bg-green-50 text-green-700 border border-green-200"
+                            : booking.status === "PENDING"
+                            ? "bg-yellow-50 text-yellow-700 border border-yellow-200"
+                            : "bg-gray-50 text-gray-600 border border-gray-200"
+                        }`}
+                      >
+                        {booking.status === "CONFIRMED"
+                          ? "Confirmé"
+                          : booking.status === "PENDING"
+                          ? "En attente"
+                          : booking.status}
+                      </span>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(booking.startTime).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                      </p>
+                      <p className="text-sm font-medium text-black">
+                        {booking.totalPrice} DH
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Today's Bookings */}
