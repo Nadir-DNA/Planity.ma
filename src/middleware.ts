@@ -117,9 +117,9 @@ export async function middleware(request: NextRequest) {
       [
         "default-src 'self'",
         `script-src 'self' 'nonce-${nonce}' https://challenges.cloudflare.com`,
-        "style-src 'self' 'unsafe-inline'", // Tailwind needs this
-        "img-src 'self' data: https: blob: *.tile.openstreetmap.org",
-        "font-src 'self' data:",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "img-src 'self' data: https: blob: *.tile.openstreetmap.org *.unsplash.com images.unsplash.com",
+        "font-src 'self' data: https://fonts.gstatic.com",
         "connect-src 'self' https://api.resend.com https://o448957.ingest.sentry.io https://challenges.cloudflare.com",
         "frame-src 'self' https://challenges.cloudflare.com",
         "frame-ancestors 'none'",
