@@ -558,6 +558,7 @@ export default function BookingPage() {
                     setSelectedEnd(null);
                   }}
                   minDate={new Date()}
+                  availableDates={nextDays.filter(d => d.slotCount > 0).map(d => d.date)}
                 />
               </div>
 

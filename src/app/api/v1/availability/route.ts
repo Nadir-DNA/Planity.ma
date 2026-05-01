@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getMockSalon, MOCK_SALONS } from "@/lib/mock-data";
+import { isTodayInMorocco, currentTimeMinutesInMorocco, formatDateMorocco } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -213,10 +214,8 @@ export async function GET(request: Request) {
     }
 
     // Now: check date is not in the past
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const bookingDate = new Date(dateStr + "T00:00:00");
-    if (bookingDate < today) {
+    const today = formatDateMorocco(new Date());
+    if (dateStr < today) {
       return NextResponse.json({ date: dateStr, salonId, availability: [] });
     }
 
@@ -259,10 +258,9 @@ export async function GET(request: Request) {
         });
       }
 
-      // Filter out past time slots for today
-      const now = new Date();
-      if (dateStr === now.toISOString().split("T")[0]) {
-        const currentMinutes = now.getHours() * 60 + now.getMinutes() + 30;
+      // Filter out past time slots for today (Morocco timezone)
+      if (isTodayInMorocco(dateStr)) {
+        const currentMinutes = currentTimeMinutesInMorocco() + 30; // 30min buffer
         slots = slots.filter(s => timeToMinutes(s.start) > currentMinutes);
       }
 
