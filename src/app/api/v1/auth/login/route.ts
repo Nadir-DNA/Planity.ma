@@ -52,16 +52,19 @@ export async function POST(request: Request) {
       password,
     });
 
-    if (signInError) {
-      console.error("Supabase signInWithPassword error:", signInError.message);
+    if (signInError || !authData.session) {
+      console.error("Supabase signInWithPassword error:", signInError?.message);
       return NextResponse.json(
         { error: "Erreur de connexion" },
         { status: 500 },
       );
     }
 
-    // Step 3: Create response with user data
-    const response = NextResponse.json({
+    // Step 3: Use createServerClient to set auth cookies in the CORRECT format
+    // Supabase SSR encodes sessions as base64url + chunks. Manual cookie setting
+    // with raw JWTs doesn't work because the middleware's createServerClient
+    // expects the base64-<encoded_session> format.
+    const supabaseResponse = NextResponse.json({
       user: {
         id: user.id,
         email: user.email,
@@ -71,49 +74,45 @@ export async function POST(request: Request) {
       },
     });
 
-    // Step 4: Set Supabase auth cookies using BOTH naming conventions
-    // - SSR-style: {projectRef}-auth-token (read by middleware updateSession)
-    // - Legacy: sb-access-token / sb-refresh-token (read by session API)
-    if (authData.session) {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-      const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
-      const accessTokenName = `${projectRef}-auth-token`;
-      const expiresTokenName = `${projectRef}-auth-token.code`;
-
-      // SSR-style cookies (what the middleware reads)
-      response.cookies.set(accessTokenName, authData.session.access_token, {
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: authData.session.expires_in,
-      });
-      response.cookies.set(expiresTokenName, authData.session.refresh_token, {
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365,
-      });
-
-      // Legacy cookies (what session API and auth-context read)
-      response.cookies.set("sb-access-token", authData.session.access_token, {
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: authData.session.expires_in,
-      });
-      response.cookies.set("sb-refresh-token", authData.session.refresh_token, {
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 365,
-      });
+    // Parse cookies from the request manually (Request doesn't have .cookies.getAll)
+    const requestCookies: { name: string; value: string }[] = [];
+    const cookieHeader = request.headers.get("cookie") || "";
+    for (const part of cookieHeader.split(";")) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const eqIndex = trimmed.indexOf("=");
+      if (eqIndex > 0) {
+        requestCookies.push({
+          name: trimmed.substring(0, eqIndex),
+          value: trimmed.substring(eqIndex + 1),
+        });
+      }
     }
 
-    return response;
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return requestCookies;
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              supabaseResponse.cookies.set(name, value, options);
+            });
+          },
+        },
+      },
+    );
+
+    // Set the session — this calls setAll internally to write correctly formatted cookies
+    await supabase.auth.setSession({
+      access_token: authData.session.access_token,
+      refresh_token: authData.session.refresh_token,
+    });
+
+    return supabaseResponse;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Login error:", message);

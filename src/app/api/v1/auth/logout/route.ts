@@ -1,57 +1,53 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { createServerClient } from "@supabase/ssr";
+
+function parseCookiesFromRequest(request: Request): { name: string; value: string }[] {
+  const cookieHeader = request.headers.get("cookie") || "";
+  const cookies: { name: string; value: string }[] = [];
+  for (const part of cookieHeader.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex > 0) {
+      cookies.push({
+        name: trimmed.substring(0, eqIndex),
+        value: trimmed.substring(eqIndex + 1),
+      });
+    }
+  }
+  return cookies;
+}
 
 export async function POST(request: Request) {
   try {
-    // Get all possible auth cookie names (both old and new naming)
-    const cookieHeader = request.headers.get("cookie") || "";
-    const cookies = Object.fromEntries(
-      cookieHeader.split(";").map((c) => {
-        const [name, ...rest] = c.trim().split("=");
-        return [name, rest.join("=")];
-      })
+    const logoutResponse = NextResponse.json({ success: true });
+
+    // Use Supabase SSR to properly clear auth cookies
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return parseCookiesFromRequest(request);
+          },
+          setAll(cookiesToSet) {
+            // signOut() will call setAll to clear all auth cookies
+            cookiesToSet.forEach(({ name, value, options }) => {
+              logoutResponse.cookies.set(name, value, options);
+            });
+          },
+        },
+      },
     );
 
-    // Determine project ref for cookie naming
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
-    const accessTokenName = `${projectRef}-auth-token`;
-
-    // Try new cookie name first, fall back to old
-    const accessToken =
-      cookies[accessTokenName] ||
-      cookies[`${accessTokenName}.code`] ||
-      cookies["sb-access-token"];
-
-    if (accessToken) {
-      // Sign out from Supabase (invalidates the session)
-      const { error } = await supabaseAdmin.auth.admin.signOut(accessToken);
-      if (error) {
-        console.error("Supabase signOut error:", error.message);
-      }
+    // Sign out via Supabase SSR - clears all properly-formatted auth cookies
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Supabase signOut error:", error.message);
     }
 
-    const response = NextResponse.json({ success: true });
-
-    // Clear ALL possible auth cookies (both naming conventions)
-    const allCookieNames = [
-      accessTokenName,
-      `${accessTokenName}.code`,
-      "sb-access-token",
-      "sb-refresh-token",
-    ];
-
-    allCookieNames.forEach((name) => {
-      response.cookies.set(name, "", {
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: 0,
-      });
-    });
-
-    return response;
+    return logoutResponse;
   } catch (error) {
     console.error("Logout error:", error);
     return NextResponse.json(
