@@ -107,16 +107,13 @@ export async function middleware(request: NextRequest) {
     "camera=(), microphone=(), geolocation=()",
   );
 
-  // CSP strict (sans unsafe-inline pour pages)
+  // CSP for pages (API routes don't need it)
   if (!pathname.startsWith("/api")) {
-    // Generate nonce for scripts
-    const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-
     supabaseResponse.headers.set(
       "Content-Security-Policy",
       [
         "default-src 'self'",
-        `script-src 'self' 'nonce-${nonce}' https://challenges.cloudflare.com`,
+        `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com`,
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "img-src 'self' data: https: blob: *.tile.openstreetmap.org *.unsplash.com images.unsplash.com",
         "font-src 'self' data: https://fonts.gstatic.com",
@@ -129,8 +126,7 @@ export async function middleware(request: NextRequest) {
       ].join("; "),
     );
 
-    // Add nonce to request for use in pages
-    supabaseResponse.headers.set("x-nonce", nonce);
+    // Removed nonce — using unsafe-inline for Next.js compatibility
   }
 
   return supabaseResponse;
