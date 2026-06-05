@@ -71,7 +71,13 @@ export default function RegisterPage() {
           return;
         }
 
-        router.push("/connexion?registered=true");
+        // Auto-connexion réussie → rediriger vers l'accueil
+        if (data.redirectTo) {
+          router.push(data.redirectTo);
+        } else {
+          router.push("/");
+          router.refresh(); // rafraîchir les dépendances auth
+        }
       } catch {
         setError("Une erreur est survenue. Réessayez.");
       }

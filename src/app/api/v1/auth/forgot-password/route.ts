@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { randomBytes } from "crypto";
-import { sendEmail, getPasswordResetEmailHtml } from "@/lib/email";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,46 +9,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email requis" }, { status: 400 });
     }
 
-    // Find user
-    const { data: user } = await supabaseAdmin
-      .from("User")
-      .select("id, email, name")
-      .eq("email", email.toLowerCase())
-      .maybeSingle();
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://planity.ma";
 
-    // Don't reveal whether user exists
-    if (!user) {
-      return NextResponse.json({ success: true });
+    // Use Supabase native password reset (PKCE flow)
+    // Supabase sends its own email — no custom email logic needed
+    const { error } = await supabaseAdmin.auth.resetPasswordForEmail(
+      email.toLowerCase(),
+      { redirectTo: `${appUrl}/reinitialiser-mot-de-passe` }
+    );
+
+    if (error) {
+      console.error("Supabase reset password error:", error);
     }
 
-    // Generate reset token
-    const resetToken = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-    // Store token
-    const { error: updateError } = await supabaseAdmin
-      .from("User")
-      .update({
-        verificationToken: resetToken,
-        verificationTokenExpires: expiresAt.toISOString(),
-      })
-      .eq("id", user.id);
-
-    if (updateError) {
-      console.error("Forgot password token update error:", updateError);
-      return NextResponse.json({ error: "Une erreur est survenue" }, { status: 500 });
-    }
-
-    // Send email with Resend
-    const resetUrl = `${process.env.NEXTAUTH_URL || "https://planity.ma"}/reinitialiser-mot-de-passe?token=${resetToken}`;
-    const html = getPasswordResetEmailHtml(resetUrl, user.name || "");
-    
-    await sendEmail({
-      to: user.email!,
-      subject: "Réinitialisation de votre mot de passe - Planity.ma",
-      html,
-    });
-
+    // Always return success for security (don't reveal if email exists)
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Forgot password error:", error);
