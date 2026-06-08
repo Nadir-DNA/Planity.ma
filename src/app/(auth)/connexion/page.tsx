@@ -21,7 +21,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
-  const { login } = useAuth();
+  const { login, user } = useAuth();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,7 +35,14 @@ export default function LoginPage() {
         return;
       }
 
-      router.push(callbackUrl);
+      // Smart role-based redirection
+      // PRO_OWNER → pro area (agenda or onboarding)
+      // CONSUMER → normal callback/home
+      if (user?.role === "PRO_OWNER") {
+        router.push("/pro/agenda");
+      } else {
+        router.push(callbackUrl);
+      }
       router.refresh();
     });
   }

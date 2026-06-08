@@ -69,10 +69,10 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
 
   const d = parsed.data;
 
-  // Check existing user
+  // Check existing user — pro flow is completely independent
   const existingUser = await findByUnique("User", "email", d.email);
   if (existingUser) {
-    return { error: "Un compte avec cet email existe déjà" };
+    return { error: "Un compte avec cet email existe déjà. Utilisez un autre email." };
   }
 
   // Hash password
