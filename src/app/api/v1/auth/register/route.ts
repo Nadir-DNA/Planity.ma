@@ -44,6 +44,7 @@ const registerSchema = z.object({
   email: z.string().email("Email invalide"),
   phone: z.string().optional(),
   password: z.string().min(8, "Mot de passe trop court (min 8 caractères)"),
+  role: z.enum(["CONSUMER", "PRO_OWNER"]).optional().default("CONSUMER"),
 });
 
 // ── Route POST /api/v1/auth/register ─────────────────────
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
       user_metadata: {
         firstName: data.firstName,
         lastName: data.lastName,
-        role: "CONSUMER",
+        role: data.role,
         locale: "FR",
         phone: data.phone || null,
       },
@@ -110,7 +111,7 @@ export async function POST(request: Request) {
         name: `${data.firstName} ${data.lastName}`,
         phone: data.phone || null,
         passwordHash,
-        role: "CONSUMER",
+        role: data.role,
         locale: "FR",
         isActive: true,
         updatedAt: now,
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
         id: userId,
         email: normalizedEmail,
         name: `${data.firstName} ${data.lastName}`,
-        role: "CONSUMER",
+        role: data.role,
         locale: "FR",
       },
     });

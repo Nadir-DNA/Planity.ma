@@ -22,6 +22,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [role, setRole] = useState<"CONSUMER" | "PRO_OWNER">("CONSUMER");
 
   function updateField(field: string, value: string) {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -42,6 +43,7 @@ export default function RegisterPage() {
             email: formData.email,
             phone: formData.phone || undefined,
             password: formData.password,
+            role,
           }),
         });
 
@@ -52,12 +54,16 @@ export default function RegisterPage() {
           return;
         }
 
-        // Auto-connexion réussie → rediriger vers l'accueil
-        if (data.redirectTo) {
-          router.push(data.redirectTo);
+        // Redirection selon le rôle choisi
+        if (role === "PRO_OWNER") {
+          router.push("/pro/inscription"); // Onboarding pro
         } else {
-          router.push("/");
-          router.refresh(); // rafraîchir les dépendances auth
+          if (data.redirectTo) {
+            router.push(data.redirectTo);
+          } else {
+            router.push("/");
+          }
+          router.refresh();
         }
       } catch {
         setError("Une erreur est survenue. Réessayez.");
@@ -80,6 +86,44 @@ export default function RegisterPage() {
               {error}
             </div>
           )}
+
+          {/* Role Selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Je m'inscris en tant que
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setRole("CONSUMER")}
+                className={cn(
+                  "flex flex-col items-center justify-center rounded-lg border-2 p-4 transition-all",
+                  role === "CONSUMER"
+                    ? "border-black bg-black text-white"
+                    : "border-gray-200 hover:border-gray-300"
+                )}
+              >
+                <User className="mb-2 h-6 w-6" />
+                <span className="font-medium">Particulier</span>
+                <span className="mt-1 text-xs text-gray-500">Réserver des rendez-vous</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRole("PRO_OWNER")}
+                className={cn(
+                  "flex flex-col items-center justify-center rounded-lg border-2 p-4 transition-all",
+                  role === "PRO_OWNER"
+                    ? "border-black bg-black text-white"
+                    : "border-gray-200 hover:border-gray-300"
+                )}
+              >
+                <span className="mb-2 text-2xl">🏢</span>
+                <span className="font-medium">Professionnel</span>
+                <span className="mt-1 text-xs text-gray-500">Gérer mon établissement</span>
+              </button>
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
