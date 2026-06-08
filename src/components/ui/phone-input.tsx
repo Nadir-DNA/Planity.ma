@@ -73,8 +73,8 @@ export function PhoneInput({
   const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let num = e.target.value.replace(/\D/g, ""); // Only digits
 
-    // Limit length
-    if (num.length > 9) num = num.slice(0, 9);
+    // Limit to 15 digits max (E.164 standard)
+    if (num.length > 15) num = num.slice(0, 15);
 
     setLocalNumber(num);
 
