@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Building2,
@@ -293,13 +294,12 @@ export default function ProRegistrationPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Téléphone *
+                  Téléphone du salon *
                 </label>
-                <Input
-                  type="tel"
-                  placeholder="+212 5XX-XXXXXX"
+                <PhoneInput
                   value={salonInfo.phone}
-                  onChange={(e) => updateSalonInfo("phone", e.target.value)}
+                  onChange={(val) => updateSalonInfo("phone", val)}
+                  required
                 />
               </div>
             </div>

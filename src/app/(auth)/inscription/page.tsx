@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mail, Lock, User, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 const MA_PHONE_REGEX = /^(\+212|0)([6-7]\d{8})$/;
 
@@ -151,34 +152,17 @@ export default function RegisterPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Téléphone
+              Téléphone <span className="text-red-500">*</span>
             </label>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                type="tel"
-                placeholder="06 XX XX XX XX"
-                className={cn(
-                  "pl-10 border-[rgba(198,198,198,0.2)] focus:border-[rgba(198,198,198,0.2)] focus:ring-1 focus:ring-[rgba(198,198,198,0.4)]",
-                  phoneError && "border-[rgba(198,198,198,0.4)]"
-                )}
-                value={formData.phone}
-                onChange={(e) => {
-                  updateField("phone", e.target.value);
-                  validatePhone(e.target.value);
-                }}
-                onBlur={() => validatePhone(formData.phone)}
-                disabled={isPending}
-              />
-            </div>
-            {phoneError && (
-              <p className="mt-1 text-xs text-gray-700">
-                {phoneError}
-              </p>
-            )}
+            <PhoneInput
+              value={formData.phone}
+              onChange={(val) => updateField("phone", val)}
+              required
+              error={phoneError}
+            />
             {!phoneError && (
               <p className="mt-1 text-xs text-gray-400">
-                Formats acceptés : 06XXXXXXXX, 07XXXXXXXX, +2126XXXXXXXX
+                Formats acceptés : +212 6XX XXX XXX, +33 6XX XXX XXX
               </p>
             )}
           </div>
