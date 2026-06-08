@@ -10,8 +10,6 @@ import { Mail, Lock, User, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PhoneInput } from "@/components/ui/phone-input";
 
-const MA_PHONE_REGEX = /^(\+212|0)([6-7]\d{8})$/;
-
 export default function RegisterPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
@@ -29,27 +27,9 @@ export default function RegisterPage() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   }
 
-  function validatePhone(value: string): boolean {
-    const stripped = value.replace(/\s/g, "");
-    if (stripped.length === 0) {
-      setPhoneError("");
-      return true;
-    }
-    if (!MA_PHONE_REGEX.test(stripped)) {
-      setPhoneError("Format invalide. Exemples : 0612345678, +212****5678");
-      return false;
-    }
-    setPhoneError("");
-    return true;
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-
-    if (!validatePhone(formData.phone)) {
-      return;
-    }
 
     startTransition(async () => {
       try {
