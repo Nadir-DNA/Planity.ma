@@ -72,13 +72,10 @@ export default function ProCaissePage() {
     async function fetchData() {
       try {
         setLoading(true);
-        const salonRes = await fetch("/api/v1/salons");
+        const salonRes = await fetch("/api/v1/pro/services");
         if (salonRes.ok) {
           const salonData = await salonRes.json();
-          if (salonData.salons?.[0]) {
-            const salonId = salonData.salons[0].id;
-            setServices(salonData.salons[0].services || []);
-          }
+          setServices(salonData.services || []);
         }
 
         // Mock data for now

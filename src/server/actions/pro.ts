@@ -127,7 +127,7 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     if (h.isOpen) {
       const dayNum = dayMap[h.day];
       if (dayNum !== undefined) {
-        await insertRow("OpeningHours", {
+        await insertRow("SalonSchedule", {
           salonId,
           dayOfWeek: dayNum,
           openTime: h.openTime,

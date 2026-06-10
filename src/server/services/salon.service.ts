@@ -38,7 +38,7 @@ export async function getSalonBySlug(slug: string) {
       *,
       services:Service!salonId(*, category:ServiceCategory(*), assignedStaff:StaffService(*, staff:StaffMember(*))),
       staff:StaffMember!salonId(*),
-      openingHours:OpeningHours(*),
+      openingHours:SalonSchedule(*),
       photos:SalonPhoto(*),
       reviews:Review!salonId(*, user:User!userId(id, name, avatar))
     `)

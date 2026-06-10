@@ -17,12 +17,40 @@ export interface AuthUser {
  * Always uses Supabase SSR (createServerClient) which reads cookies
  * in the correct format (base64url-encoded, chunked, project-ref-prefixed).
  */
-export async function getUser(_request?: Request): Promise<AuthUser | null> {
+export async function getUser(request?: Request): Promise<AuthUser | null> {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user: supabaseUser },
-    } = await supabase.auth.getUser();
+    let supabaseUser = null;
+
+    // Strategy 1: Try Bearer token from Authorization header
+    const authHeader = request?.headers?.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.slice(7).trim();
+      if (token) {
+        try {
+          const { data, error } = await supabaseAdmin.auth.getUser(token);
+          if (!error && data.user) {
+            supabaseUser = data.user;
+          }
+        } catch {
+          // Token validation failed, try cookie strategy
+        }
+      }
+    }
+
+    // Strategy 2: Try Supabase SSR cookies (browser flow)
+    if (!supabaseUser) {
+      try {
+        const supabase = await createClient();
+        const {
+          data: { user: cookieUser },
+        } = await supabase.auth.getUser();
+        if (cookieUser) {
+          supabaseUser = cookieUser;
+        }
+      } catch {
+        // createClient() may throw if called outside a request context
+      }
+    }
 
     if (!supabaseUser) return null;
 

@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     try {
       let query = supabaseAdmin
         .from("Salon")
-        .select("id, name, slug, category, description, city, address, coverImage, isActive, isVerified, averageRating, reviewCount, latitude, longitude, services:Service(*), staff:StaffMember(*), openingHours:OpeningHour(*), photos:SalonPhoto(*)", { count: "exact" })
+        .select("id, name, slug, category, description, city, address, coverImage, isActive, isVerified, averageRating, reviewCount, latitude, longitude, services:Service(*), staff:StaffMember(*), openingHours:SalonSchedule(id, dayOfWeek, openTime, closeTime, isClosed),photos:SalonPhoto(*)", { count: "exact" })
         .eq("isActive", true)
         .order(sortBy === "rating" ? "averageRating" : "createdAt", { ascending: sortBy === "name" })
         .limit(limit);

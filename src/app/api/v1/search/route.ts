@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     try {
       let queryBuilder = supabaseAdmin
         .from("Salon")
-        .select("id, name, slug, category, description, city, address, coverImage, isActive, isVerified, averageRating, reviewCount, latitude, longitude, services:Service(id, name, slug, price, duration, isActive), openingHours:OpeningHour(*), photos:SalonPhoto(*)", { count: "exact" })
+        .select("id, name, slug, category, description, city, address, coverImage, isActive, isVerified, averageRating, reviewCount, latitude, longitude, services:Service(id, name, slug, price, duration, isActive), openingHours:SalonSchedule(id, dayOfWeek, openTime, closeTime, isClosed), photos:SalonPhoto(*)", { count: "exact" })
         .eq("isActive", true);
 
       if (isVerified) queryBuilder = queryBuilder.eq("isVerified", true);

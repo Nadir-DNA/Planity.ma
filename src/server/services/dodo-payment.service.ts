@@ -6,12 +6,18 @@ import { supabaseAdmin, findById, findByUnique, insertRow, updateRow } from "@/l
  * Dodo Payment is a payment gateway alternative to Stripe/CMI.
  * Documentation: https://docs.dodopayments.com
  * 
- * API Base URL: https://api.dodopayments.com
+ * API Base URL: https://live.dodopayments.com (⚠️ PAS d' /v1/ dans les chemins)
  * Authentication: Bearer token via API key
  */
 
-const DODO_API_BASE = "https://api.dodopayments.com";
-const DODO_API_KEY = process.env.DODO_API_KEY || "";
+const DODO_API_BASE = "https://live.dodopayments.com";
+const DODO_API_KEY = process.env.DODO_PAYMENT_API_KEY || "";
+const DODO_WEBHOOK_KEY = process.env.DODO_PAYMENTS_WEBHOOK_KEY || "";
+const DODO_BOOKING_PRODUCT_ID = process.env.DODO_BOOKING_PRODUCT_ID || "pdt_0Nep6iKfD7V6aEdluDCOE";
+
+// Approximate MAD-to-USD rate for Dodo Payments (product prices are in USD)
+// Dodo handles adaptive currency display via billing_currency field
+const MAD_TO_USD_CENTS_RATE = 10; // ~10 MAD = 1 USD
 
 interface CreatePaymentParams {
   bookingId: string;
@@ -30,12 +36,8 @@ interface PaymentResult {
 }
 
 interface DodoCheckoutSession {
-  id: string;
-  status: string;
-  checkout_url: string;
-  payment_id?: string;
-  amount?: number;
-  currency?: string;
+  session_id: string;
+  checkout_url: string | null;
 }
 
 /**
@@ -44,29 +46,43 @@ interface DodoCheckoutSession {
 async function createDodoCheckoutSession(params: {
   bookingId: string;
   amount: number;
+  customerEmail?: string;
+  customerName?: string;
   currency?: string;
   metadata?: Record<string, string>;
 }): Promise<DodoCheckoutSession | null> {
-  const { bookingId, amount, currency = "MAD", metadata = {} } = params;
+  const { bookingId, amount, customerEmail, customerName, currency = "MAD", metadata = {} } = params;
 
   try {
-    const response = await fetch(`${DODO_API_BASE}/v1/checkout/sessions`, {
+    // Convert MAD amount to USD cents (Dodo products are priced in USD)
+    const amountInUsdCents = Math.round((amount / MAD_TO_USD_CENTS_RATE) * 100);
+
+    const response = await fetch(`${DODO_API_BASE}/checkouts`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${DODO_API_KEY}`,
         "Content-Type": "application/json",
-        "Dodo-Source": "planity.ma",
       },
       body: JSON.stringify({
-        amount: Math.round(amount * 100), // Convert to cents
-        currency: currency.toLowerCase(),
+        product_cart: [{
+          product_id: DODO_BOOKING_PRODUCT_ID,
+          quantity: 1,
+          amount: amountInUsdCents,
+        }],
+        billing_currency: "MAD",
         metadata: {
           booking_id: bookingId,
-          source: "planity.ma",
+          payment_type: "booking_deposit",
           ...metadata,
         },
         redirect_url: `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/paiement/succes`,
         cancel_url: `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/paiement/annule`,
+        ...(customerEmail ? {
+          customer: {
+            email: customerEmail,
+            name: customerName || undefined,
+          },
+        } : {}),
       }),
     });
 
@@ -116,11 +132,16 @@ export async function initDodoPayment(params: CreatePaymentParams): Promise<Paym
     status: "PENDING",
   });
 
+  const bookingData = booking as Record<string, unknown>;
+  const userData = bookingData.user as Record<string, unknown> | undefined;
+
   // Create Dodo checkout session
   const checkoutSession = await createDodoCheckoutSession({
     bookingId,
     amount,
     currency: "MAD",
+    customerEmail: userData?.email as string | undefined,
+    customerName: userData?.name as string | undefined,
     metadata: {
       salon_id: booking.salonId,
       payment_id: (payment as Record<string, unknown>).id as string,
@@ -133,14 +154,14 @@ export async function initDodoPayment(params: CreatePaymentParams): Promise<Paym
 
   // Update payment with Dodo ID
   await updateRow("Payment", (payment as Record<string, unknown>).id as string, {
-    stripePaymentIntentId: checkoutSession.id, // Reuse existing field for Dodo payment ID
+    stripePaymentIntentId: checkoutSession.session_id, // Dodo session ID
   });
 
   return {
     success: true,
     paymentId: (payment as Record<string, unknown>).id as string,
-    redirectUrl: checkoutSession.checkout_url,
-    dodoPaymentId: checkoutSession.id,
+    redirectUrl: checkoutSession.checkout_url || undefined,
+    dodoPaymentId: checkoutSession.session_id,
   };
 }
 
@@ -328,14 +349,17 @@ export async function processRefund(paymentId: string, amount?: number): Promise
   // If it was a Dodo payment, try to refund via API
   if (p.stripePaymentIntentId && p.method === "CARD") {
     try {
-      await fetch(`${DODO_API_BASE}/v1/payments/${p.stripePaymentIntentId}/refund`, {
+      await fetch(`${DODO_API_BASE}/refunds`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${DODO_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          amount: Math.round(refundAmount * 100),
+          payment_id: p.stripePaymentIntentId as string,
+          metadata: {
+            reason: "Merchant initiated refund",
+          },
         }),
       });
     } catch (error) {

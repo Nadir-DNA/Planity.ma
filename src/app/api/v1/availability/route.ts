@@ -136,18 +136,31 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
       }
 
-      // Fetch opening hours from DB
-      // TODO: When OpeningHours table exists in Supabase
-      // For now, default to standard Moroccan salon hours
-      openingHours = [
-        { dayOfWeek: 0, openTime: "09:00", closeTime: "19:00", isClosed: false },
-        { dayOfWeek: 1, openTime: "09:00", closeTime: "19:00", isClosed: false },
-        { dayOfWeek: 2, openTime: "09:00", closeTime: "19:00", isClosed: false },
-        { dayOfWeek: 3, openTime: "09:00", closeTime: "19:00", isClosed: false },
-        { dayOfWeek: 4, openTime: "09:00", closeTime: "19:00", isClosed: false },
-        { dayOfWeek: 5, openTime: "09:00", closeTime: "20:00", isClosed: false },
-        { dayOfWeek: 6, openTime: "00:00", closeTime: "00:00", isClosed: true },
-      ];
+      // Fetch opening hours from SalonSchedule table
+      const { data: dbHours } = await supabaseAdmin
+        .from("SalonSchedule")
+        .select("dayOfWeek, openTime, closeTime, isClosed")
+        .eq("salonId", salonId);
+
+      if (dbHours && dbHours.length > 0) {
+        openingHours = dbHours.map((h: Record<string, unknown>) => ({
+          dayOfWeek: h.dayOfWeek as number,
+          openTime: h.openTime as string,
+          closeTime: h.closeTime as string,
+          isClosed: h.isClosed as boolean,
+        }));
+      } else {
+        // Fallback: default to standard Moroccan salon hours
+        openingHours = [
+          { dayOfWeek: 0, openTime: "09:00", closeTime: "19:00", isClosed: false },
+          { dayOfWeek: 1, openTime: "09:00", closeTime: "19:00", isClosed: false },
+          { dayOfWeek: 2, openTime: "09:00", closeTime: "19:00", isClosed: false },
+          { dayOfWeek: 3, openTime: "09:00", closeTime: "19:00", isClosed: false },
+          { dayOfWeek: 4, openTime: "09:00", closeTime: "19:00", isClosed: false },
+          { dayOfWeek: 5, openTime: "09:00", closeTime: "20:00", isClosed: false },
+          { dayOfWeek: 6, openTime: "00:00", closeTime: "00:00", isClosed: true },
+        ];
+      }
 
       // Fetch staff from DB
       let staffQuery = supabaseAdmin

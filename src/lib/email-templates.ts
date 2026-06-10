@@ -16,11 +16,11 @@ const baseTemplate = (content: string, title: string) => `
     .container { max-width: 600px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 40px; }
     .header { text-align: center; margin-bottom: 30px; }
     .logo { font-size: 24px; font-weight: 700; color: #1a1a1a; }
-    .accent { color: #2dd4a8; }
+    .accent { color: #e11e48; }
     .content { line-height: 1.6; color: #333; }
-    .button { display: inline-block; padding: 16px 32px; background: #2dd4a8; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+    .button { display: inline-block; padding: 16px 32px; background: #e11e48; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
     .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 14px; }
-    .link { color: #2dd4a8; text-decoration: none; }
+    .link { color: #e11e48; text-decoration: none; }
   </style>
 </head>
 <body>

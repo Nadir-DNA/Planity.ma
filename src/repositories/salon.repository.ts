@@ -16,7 +16,7 @@ export class SalonRepository {
       .from("Salon")
       .select(`
         *,
-        openingHours:OpeningHours(*),
+        openingHours:SalonSchedule(*),
         services:Service(*),
         staff:StaffMember(*)
       `)
