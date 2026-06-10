@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createId as createCuid } from "@paralleldrive/cuid2";
+
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 
@@ -98,7 +98,6 @@ export async function POST(request: Request) {
     const { data: staffMember, error: createError } = await supabaseAdmin
       .from("StaffMember")
       .insert({
-        id: createCuid(),
         salonId: salon.id,
         displayName,
         title: title || null,
@@ -122,7 +121,6 @@ export async function POST(request: Request) {
     if (schedules?.length) {
       const scheduleData = schedules.map(
         (s: { dayOfWeek: number; startTime: string; endTime: string; isWorking: boolean }) => ({
-          id: createCuid(),
           staffId: staffMember.id,
           dayOfWeek: s.dayOfWeek,
           startTime: s.startTime,

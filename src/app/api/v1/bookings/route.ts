@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 import { paginationSchema } from "@/lib/validations";
 import { generateBookingReference } from "@/lib/utils";
-import { createId as createCuid } from "@paralleldrive/cuid2";
+
 import { sendBookingConfirmation, sendBookingCancellation } from "@/server/services/notification.service";
 import { getMockSalon, MOCK_SALONS } from "@/lib/mock-data";
 
@@ -161,13 +161,14 @@ export async function POST(request: Request) {
     if (isMockBooking) {
       const mockSalon = getMockSalon(salonId) || MOCK_SALONS.find(s => s.id === salonId);
       const reference = generateBookingReference();
-      const bookingId = createCuid();
+      const mockBookingId = crypto.randomUUID();
+      
       const firstService = dbServices[0];
       const mockStaff = mockSalon?.staff?.[0];
 
       return NextResponse.json({
         booking: {
-          id: bookingId,
+          id: mockBookingId,
           reference,
           userId,
           salonId,
@@ -181,7 +182,6 @@ export async function POST(request: Request) {
           updatedAt: new Date().toISOString(),
           salon: mockSalon ? { id: mockSalon.id, name: mockSalon.name, slug: mockSalon.slug, city: mockSalon.city, address: mockSalon.address } : null,
           items: dbServices.map((svc, i) => ({
-            id: createCuid(),
             serviceId: svc.id,
             staffId: mockStaff?.id || `mock-staff-${i}`,
             startTime: new Date(startTime.getTime() + i * svc.duration * 60000).toISOString(),
@@ -319,7 +319,6 @@ export async function POST(request: Request) {
     const { data: booking, error: createError } = await supabaseAdmin
       .from("Booking")
       .insert({
-        id: createCuid(),
         reference,
         userId,
         salonId,
@@ -344,7 +343,6 @@ export async function POST(request: Request) {
 
     // Create booking items
     const bookingItems = items.map((item) => ({
-      id: createCuid(),
       ...item,
       bookingId: booking.id,
     }));
