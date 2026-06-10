@@ -69,14 +69,31 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
 
   const d = parsed.data;
 
-  // Check existing user — pro flow is completely independent
-  const existingUser = await findByUnique("User", "email", d.email);
-  if (existingUser) {
-    return { error: "Un compte avec cet email existe déjà. Utilisez un autre email." };
-  }
+  // Check existing user — if exists, use it (registered via /inscription)
+  let existingUser = await findByUnique("User", "email", d.email);
+  let userId: string;
 
-  // Hash password
-  const passwordHash = await bcrypt.hash(d.password, 12);
+  if (existingUser) {
+    // User already registered — use existing account
+    userId = (existingUser as Record<string, unknown>).id as string;
+    // Update role to PRO_OWNER if needed
+    if ((existingUser as Record<string, unknown>).role !== "PRO_OWNER") {
+      await updateRow("User", userId, { role: "PRO_OWNER" });
+    }
+  } else {
+    // No existing user — create one (standalone onboarding flow)
+    const passwordHash = await bcrypt.hash(d.password, 12);
+    const user = await insertRow("User", {
+      firstName: d.firstName,
+      lastName: d.lastName,
+      name: `${d.firstName} ${d.lastName}`,
+      email: d.email,
+      phone: d.phone || null,
+      passwordHash,
+      role: "PRO_OWNER",
+    });
+    userId = (user as Record<string, unknown>).id as string;
+  }
 
   // Generate unique slug
   let slug = slugify(d.salonName + " " + d.salonCity);
@@ -93,17 +110,6 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     Lundi: 0, Mardi: 1, Mercredi: 2, Jeudi: 3, Vendredi: 4, Samedi: 5, Dimanche: 6,
   };
 
-  // Create user
-  const user = await insertRow("User", {
-    firstName: d.firstName,
-    lastName: d.lastName,
-    name: `${d.firstName} ${d.lastName}`,
-    email: d.email,
-    phone: d.phone || null,
-    passwordHash,
-    role: "PRO_OWNER",
-  });
-
   // Create salon
   const salon = await insertRow("Salon", {
     name: d.salonName,
@@ -115,11 +121,10 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     phone: d.salonPhone,
     email: d.salonEmail || null,
     description: d.salonDescription || null,
-    ownerId: (user as Record<string, unknown>).id as string,
+    ownerId: userId,
     isActive: false, // requires admin approval
   });
 
-  const userId = (user as Record<string, unknown>).id as string;
   const salonId = (salon as Record<string, unknown>).id as string;
 
   // Create opening hours
