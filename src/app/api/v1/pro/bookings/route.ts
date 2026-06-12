@@ -1,8 +1,23 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getUser } from "@/lib/auth";
+import { getUser, getProSalonId } from "@/lib/auth";
+import { sendBookingCancellation } from "@/server/services/notification.service";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
+
+const BOOKING_STATUSES = ["PENDING", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"] as const;
+const statusSchema = z.enum(BOOKING_STATUSES);
+
+// Transitions autorisées (machine à états)
+const ALLOWED_TRANSITIONS: Record<string, readonly string[]> = {
+  PENDING: ["CONFIRMED", "CANCELLED", "NO_SHOW"],
+  CONFIRMED: ["IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"],
+  IN_PROGRESS: ["COMPLETED", "CANCELLED"],
+  COMPLETED: [],
+  CANCELLED: [],
+  NO_SHOW: [],
+};
 
 export async function GET(request: Request) {
   try {
@@ -15,16 +30,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Accès réservé aux professionnels" }, { status: 403 });
     }
 
-    // Find salon owned by user
-    const { data: salon, error: salonError } = await supabaseAdmin
-      .from("Salon")
-      .select("id")
-      .eq("ownerId", user.id)
-      .maybeSingle();
-
-    if (salonError || !salon) {
+    // Salon du pro (owner OU membre d'équipe via StaffMember.userId)
+    const salonId = await getProSalonId(user);
+    if (!salonId) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
+    const salon = { id: salonId };
 
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date"); // YYYY-MM-DD
@@ -88,39 +99,51 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Accès réservé aux professionnels" }, { status: 403 });
     }
 
-    // Find salon owned by user
-    const { data: salon } = await supabaseAdmin
-      .from("Salon")
-      .select("id")
-      .eq("ownerId", user.id)
-      .maybeSingle();
-
-    if (!salon) {
+    const salonId = await getProSalonId(user);
+    if (!salonId) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
 
     const body = await request.json();
-    const { bookingId, status: newStatus, cancellationReason } = body;
+    const { bookingId, status: rawStatus, cancellationReason } = body;
 
     if (!bookingId) {
       return NextResponse.json({ error: "bookingId requis" }, { status: 400 });
     }
 
+    const parsedStatus = statusSchema.safeParse(rawStatus);
+    if (!parsedStatus.success) {
+      return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
+    }
+    const newStatus = parsedStatus.data;
+
     // Verify booking belongs to this salon
     const { data: booking } = await supabaseAdmin
       .from("Booking")
-      .select("id")
+      .select("id, status")
       .eq("id", bookingId)
-      .eq("salonId", salon.id)
+      .eq("salonId", salonId)
       .maybeSingle();
 
     if (!booking) {
       return NextResponse.json({ error: "Réservation non trouvée" }, { status: 404 });
     }
 
-    const updateData: Record<string, unknown> = {};
-    if (newStatus) updateData.status = newStatus;
-    if (newStatus === "CANCELLED") {
+    // Machine à états : pas de résurrection d'une résa annulée/terminée
+    const allowed = ALLOWED_TRANSITIONS[booking.status as string] ?? [];
+    if (!allowed.includes(newStatus)) {
+      return NextResponse.json(
+        { error: `Transition impossible : ${booking.status} → ${newStatus}` },
+        { status: 409 }
+      );
+    }
+
+    const updateData: Record<string, unknown> = {
+      status: newStatus,
+      updatedAt: new Date().toISOString(),
+    };
+    const isCancellation = newStatus === "CANCELLED" || newStatus === "NO_SHOW";
+    if (isCancellation) {
       updateData.cancelledAt = new Date().toISOString();
       updateData.cancellationReason = cancellationReason || null;
     }
@@ -138,6 +161,18 @@ export async function PATCH(request: Request) {
         { error: "Erreur lors de la mise à jour" },
         { status: 500 }
       );
+    }
+
+    if (isCancellation) {
+      // Libérer les créneaux + prévenir le client (non bloquant)
+      await supabaseAdmin
+        .from("BookingItem")
+        .update({ isCancelled: true })
+        .eq("bookingId", bookingId);
+
+      if (newStatus === "CANCELLED") {
+        sendBookingCancellation(bookingId).catch(console.error);
+      }
     }
 
     return NextResponse.json({ booking: updated });

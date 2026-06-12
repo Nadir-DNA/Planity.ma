@@ -1,11 +1,15 @@
 "use client";
 
-import { Check, ArrowLeft, Calendar } from "lucide-react";
+import { Check, ArrowLeft, Calendar, LayoutDashboard } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessContent() {
   const [visible, setVisible] = useState(false);
+  const searchParams = useSearchParams();
+  // Activation d'abonnement salon pro (vs paiement de réservation client)
+  const isActivation = searchParams.get("type") === "activation";
 
   useEffect(() => {
     setVisible(true);
@@ -34,10 +38,12 @@ export default function PaymentSuccessPage() {
 
           {/* Heading */}
           <h1 className="text-2xl font-semibold tracking-tight text-on-surface mb-2">
-            Paiement réussi !
+            {isActivation ? "Abonnement souscrit !" : "Paiement réussi !"}
           </h1>
           <p className="text-on-surface-muted text-sm leading-relaxed mb-8">
-            Votre paiement a été traité avec succès. Vous recevrez un email de confirmation sous peu.
+            {isActivation
+              ? "Votre paiement a été traité. Votre salon sera visible en ligne dans quelques instants, dès la confirmation du paiement."
+              : "Votre paiement a été traité avec succès. Vous recevrez un email de confirmation sous peu."}
           </p>
 
           {/* Divider */}
@@ -46,7 +52,7 @@ export default function PaymentSuccessPage() {
           {/* Actions */}
           <div className="space-y-3">
             <Link
-              href="/mes-rendez-vous"
+              href={isActivation ? "/pro" : "/mes-rendez-vous"}
               className="
                 group flex items-center justify-center w-full h-12
                 bg-on-surface text-surface-bright
@@ -57,8 +63,12 @@ export default function PaymentSuccessPage() {
                 active:scale-[0.98]
               "
             >
-              <Calendar className="h-4 w-4 mr-2.5" strokeWidth={1.8} />
-              Voir mes rendez-vous
+              {isActivation ? (
+                <LayoutDashboard className="h-4 w-4 mr-2.5" strokeWidth={1.8} />
+              ) : (
+                <Calendar className="h-4 w-4 mr-2.5" strokeWidth={1.8} />
+              )}
+              {isActivation ? "Accéder à mon espace pro" : "Voir mes rendez-vous"}
             </Link>
 
             <Link
@@ -79,5 +89,13 @@ export default function PaymentSuccessPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={null}>
+      <PaymentSuccessContent />
+    </Suspense>
   );
 }

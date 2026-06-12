@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getMockSalon, MOCK_SALONS } from "@/lib/mock-data";
-import { isTodayInMorocco, currentTimeMinutesInMorocco, formatDateMorocco } from "@/lib/timezone";
+import { isTodayInMorocco, currentTimeMinutesInMorocco, formatDateMorocco, createMoroccoDate, getHoursMinutesMorocco } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -103,97 +102,83 @@ export async function GET(request: Request) {
     const jsDay = date.getDay();
     const schemaDay = (jsDay + 6) % 7;
 
-    // Try mock data first
-    const mockSalon = getMockSalon(salonId) || MOCK_SALONS.find(s => s.id === salonId);
-    const isMock = !!mockSalon;
-
     // Get opening hours
     let openingHours: OpeningHour[] = [];
     let staffMembers: StaffInfo[] = [];
     let serviceDuration = 30;
 
-    if (isMock && mockSalon) {
-      openingHours = mockSalon.openingHours;
-      staffMembers = staffId
-        ? mockSalon.staff.filter(s => s.id === staffId && s.isActive)
-        : mockSalon.staff.filter(s => s.isActive);
+    const { data: dbSalon } = await supabaseAdmin
+      .from("Salon")
+      .select("id, name, slug, isActive")
+      .eq("id", salonId)
+      .maybeSingle();
 
-      if (serviceId) {
-        const svc = mockSalon.services.find(s => s.id === serviceId);
-        if (svc) serviceDuration = svc.duration;
-      } else if (mockSalon.services.length) {
-        serviceDuration = Math.min(...mockSalon.services.filter(s => s.isOnlineBookable !== false).map(s => s.duration));
-      }
+    if (!dbSalon) {
+      return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
+    }
+
+    // Salon non activé (abonnement non payé) → pas de créneaux réservables
+    if (!dbSalon.isActive) {
+      return NextResponse.json({ date: dateStr, salonId, availability: [] });
+    }
+
+    // Fetch opening hours from SalonSchedule table
+    const { data: dbHours } = await supabaseAdmin
+      .from("SalonSchedule")
+      .select("dayOfWeek, openTime, closeTime, isClosed")
+      .eq("salonId", salonId);
+
+    if (dbHours && dbHours.length > 0) {
+      openingHours = dbHours.map((h: Record<string, unknown>) => ({
+        dayOfWeek: h.dayOfWeek as number,
+        openTime: h.openTime as string,
+        closeTime: h.closeTime as string,
+        isClosed: h.isClosed as boolean,
+      }));
     } else {
-      // DB mode — fetch from Supabase
-      const { data: dbSalon } = await supabaseAdmin
-        .from("Salon")
-        .select("id, name, slug")
-        .eq("id", salonId)
+      // Fallback: default to standard Moroccan salon hours
+      openingHours = [
+        { dayOfWeek: 0, openTime: "09:00", closeTime: "19:00", isClosed: false },
+        { dayOfWeek: 1, openTime: "09:00", closeTime: "19:00", isClosed: false },
+        { dayOfWeek: 2, openTime: "09:00", closeTime: "19:00", isClosed: false },
+        { dayOfWeek: 3, openTime: "09:00", closeTime: "19:00", isClosed: false },
+        { dayOfWeek: 4, openTime: "09:00", closeTime: "19:00", isClosed: false },
+        { dayOfWeek: 5, openTime: "09:00", closeTime: "20:00", isClosed: false },
+        { dayOfWeek: 6, openTime: "00:00", closeTime: "00:00", isClosed: true },
+      ];
+    }
+
+    // Fetch staff from DB
+    let staffQuery = supabaseAdmin
+      .from("StaffMember")
+      .select("id, displayName, color, isActive")
+      .eq("salonId", salonId)
+      .eq("isActive", true);
+
+    if (staffId) staffQuery = staffQuery.eq("id", staffId);
+
+    const { data: dbStaff } = await staffQuery;
+    if (dbStaff && dbStaff.length > 0) {
+      staffMembers = dbStaff.map(s => ({
+        id: s.id,
+        displayName: s.displayName,
+        color: s.color || "#000000",
+        isActive: true,
+      }));
+    }
+
+    // Fetch service duration from DB
+    if (serviceId) {
+      const { data: dbService } = await supabaseAdmin
+        .from("Service")
+        .select("duration")
+        .eq("id", serviceId)
         .maybeSingle();
+      if (dbService) serviceDuration = dbService.duration;
+    }
 
-      if (!dbSalon) {
-        return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
-      }
-
-      // Fetch opening hours from SalonSchedule table
-      const { data: dbHours } = await supabaseAdmin
-        .from("SalonSchedule")
-        .select("dayOfWeek, openTime, closeTime, isClosed")
-        .eq("salonId", salonId);
-
-      if (dbHours && dbHours.length > 0) {
-        openingHours = dbHours.map((h: Record<string, unknown>) => ({
-          dayOfWeek: h.dayOfWeek as number,
-          openTime: h.openTime as string,
-          closeTime: h.closeTime as string,
-          isClosed: h.isClosed as boolean,
-        }));
-      } else {
-        // Fallback: default to standard Moroccan salon hours
-        openingHours = [
-          { dayOfWeek: 0, openTime: "09:00", closeTime: "19:00", isClosed: false },
-          { dayOfWeek: 1, openTime: "09:00", closeTime: "19:00", isClosed: false },
-          { dayOfWeek: 2, openTime: "09:00", closeTime: "19:00", isClosed: false },
-          { dayOfWeek: 3, openTime: "09:00", closeTime: "19:00", isClosed: false },
-          { dayOfWeek: 4, openTime: "09:00", closeTime: "19:00", isClosed: false },
-          { dayOfWeek: 5, openTime: "09:00", closeTime: "20:00", isClosed: false },
-          { dayOfWeek: 6, openTime: "00:00", closeTime: "00:00", isClosed: true },
-        ];
-      }
-
-      // Fetch staff from DB
-      let staffQuery = supabaseAdmin
-        .from("StaffMember")
-        .select("id, displayName, color, isActive")
-        .eq("salonId", salonId)
-        .eq("isActive", true);
-
-      if (staffId) staffQuery = staffQuery.eq("id", staffId);
-
-      const { data: dbStaff } = await staffQuery;
-      if (dbStaff && dbStaff.length > 0) {
-        staffMembers = dbStaff.map(s => ({
-          id: s.id,
-          displayName: s.displayName,
-          color: s.color || "#000000",
-          isActive: true,
-        }));
-      }
-
-      // Fetch service duration from DB
-      if (serviceId) {
-        const { data: dbService } = await supabaseAdmin
-          .from("Service")
-          .select("duration")
-          .eq("id", serviceId)
-          .maybeSingle();
-        if (dbService) serviceDuration = dbService.duration;
-      }
-
-      if (staffMembers.length === 0 && !staffId) {
-        staffMembers = [{ id: "any", displayName: "Premier disponible", color: "#000000", isActive: true }];
-      }
+    if (staffMembers.length === 0 && !staffId) {
+      staffMembers = [{ id: "any", displayName: "Premier disponible", color: "#000000", isActive: true }];
     }
 
     // Get day's opening hours
@@ -203,26 +188,29 @@ export async function GET(request: Request) {
       return NextResponse.json({ date: dateStr, salonId, availability: [] });
     }
 
-    // Fetch existing bookings for this date (DB mode only)
+    // Fetch existing bookings for this date — exclure les réservations annulées
     let existingBookings: Array<{ staffId: string; startTime: string; endTime: string }> = [];
 
-    if (!isMock) {
-      const staffIds = staffMembers.map(s => s.id).filter(id => id !== "any");
-      if (staffIds.length > 0) {
-        const { data: bookedItems } = await supabaseAdmin
-          .from("BookingItem")
-          .select("staffId, startTime, endTime")
-          .in("staffId", staffIds)
-          .gte("startTime", `${dateStr}T00:00:00`)
-          .lte("startTime", `${dateStr}T23:59:59`);
+    const staffIds = staffMembers.map(s => s.id).filter(id => id !== "any");
+    if (staffIds.length > 0) {
+      // Bornes de la journée marocaine converties en UTC (les bookings sont stockés en UTC)
+      const dayStartUtc = createMoroccoDate(dateStr, "00:00");
+      const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60000);
 
-        if (bookedItems) {
-          existingBookings = bookedItems.map((item: Record<string, unknown>) => ({
-            staffId: item.staffId as string,
-            startTime: item.startTime as string,
-            endTime: item.endTime as string,
-          }));
-        }
+      const { data: bookedItems } = await supabaseAdmin
+        .from("BookingItem")
+        .select("staffId, startTime, endTime")
+        .in("staffId", staffIds)
+        .eq("isCancelled", false)
+        .gte("startTime", dayStartUtc.toISOString())
+        .lt("startTime", dayEndUtc.toISOString());
+
+      if (bookedItems) {
+        existingBookings = bookedItems.map((item: Record<string, unknown>) => ({
+          staffId: item.staffId as string,
+          startTime: item.startTime as string,
+          endTime: item.endTime as string,
+        }));
       }
     }
 
@@ -234,15 +222,15 @@ export async function GET(request: Request) {
 
     // Generate per-staff availability
     const availability: StaffAvailability[] = staffMembers.map((member) => {
-      // Filter bookings for this staff
+      // Filter bookings for this staff — heures UTC stockées → minutes locales Maroc
       const memberBookings = existingBookings
         .filter(b => b.staffId === member.id)
         .map(b => {
-          const startTime = b.startTime.includes("T") ? b.startTime.split("T")[1].substring(0, 5) : b.startTime.substring(0, 5);
-          const endTime = b.endTime.includes("T") ? b.endTime.split("T")[1].substring(0, 5) : b.endTime.substring(0, 5);
+          const start = getHoursMinutesMorocco(new Date(b.startTime));
+          const end = getHoursMinutesMorocco(new Date(b.endTime));
           return {
-            start: timeToMinutes(startTime),
-            end: timeToMinutes(endTime) + 5, // 5min buffer
+            start: start.hours * 60 + start.minutes,
+            end: end.hours * 60 + end.minutes + 5, // 5min buffer
           };
         });
 
@@ -254,22 +242,6 @@ export async function GET(request: Request) {
         serviceDuration,
         bookingsToSubtract
       );
-
-      // For mock data: add staff-specific variation
-      if (isMock && mockSalon) {
-        const seed = member.id.charCodeAt(member.id.length - 1) + date.getDate();
-        
-        // Remove some slots for variety (different pattern per staff)
-        slots = slots.filter((_, i) => (seed + i) % 4 !== 0);
-
-        // Staff-specific lunch break
-        const lunchStart = 12 * 60 + (seed % 3) * 15;
-        const lunchEnd = lunchStart + 60;
-        slots = slots.filter(s => {
-          const slotStart = timeToMinutes(s.start);
-          return slotStart < lunchStart || slotStart >= lunchEnd;
-        });
-      }
 
       // Filter out past time slots for today (Morocco timezone)
       if (isTodayInMorocco(dateStr)) {

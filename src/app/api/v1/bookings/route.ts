@@ -5,7 +5,8 @@ import { paginationSchema } from "@/lib/validations";
 import { generateBookingReference } from "@/lib/utils";
 
 import { sendBookingConfirmation, sendBookingCancellation } from "@/server/services/notification.service";
-import { getMockSalon, MOCK_SALONS } from "@/lib/mock-data";
+import { createMoroccoDate } from "@/lib/timezone";
+import { isWithinSalonHours, isWithinStaffSchedule, timeToMinutes } from "@/lib/booking-window";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +47,6 @@ export async function GET(request: Request) {
 
     const { data: bookings, count: total, error } = await query;
 
-    console.log("[DEBUG] GET bookings:", { userId: user.id, count: total, error: error?.message, dataLen: bookings?.length });
-
     if (error) {
       console.error("Bookings fetch Supabase error:", JSON.stringify(error));
       return NextResponse.json({
@@ -55,7 +54,6 @@ export async function GET(request: Request) {
         total: 0,
         page: 1,
         totalPages: 0,
-        _debug: error.message,
       });
     }
 
@@ -103,95 +101,62 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      return NextResponse.json({ error: "Date ou heure invalide" }, { status: 400 });
+    }
+
+    // L'heure choisie est une heure locale Maroc → conversion explicite en UTC
+    const startTime = createMoroccoDate(date, time);
+
     // Reject past dates
-    const bookingDate = new Date(`${date}T${time}`);
-    if (isNaN(bookingDate.getTime()) || bookingDate < new Date()) {
+    if (isNaN(startTime.getTime()) || startTime < new Date()) {
       return NextResponse.json(
         { error: "Impossible de réserver dans le passé" },
         { status: 400 }
       );
     }
 
-    // Fetch services — try Supabase first, fallback to mock
-    const serviceIds = services.map((s: { serviceId: string }) => s.serviceId);
-    let dbServices: Array<{ id: string; price: number; duration: number; salonId: string }> | null = null;
-    let isMockBooking = false;
+    // Le salon doit exister et être actif (abonnement payé)
+    const { data: salon } = await supabaseAdmin
+      .from("Salon")
+      .select("id, isActive")
+      .eq("id", salonId)
+      .maybeSingle();
 
-    const { data: supabaseServices, error: svcError } = await supabaseAdmin
+    if (!salon || !salon.isActive) {
+      return NextResponse.json(
+        { error: "Ce salon n'accepte pas de réservations en ligne pour le moment" },
+        { status: 400 }
+      );
+    }
+
+    // Fetch services
+    const serviceIds = services.map((s: { serviceId: string }) => s.serviceId);
+
+    const { data: dbServices, error: svcError } = await supabaseAdmin
       .from("Service")
       .select("*")
       .in("id", serviceIds)
       .eq("salonId", salonId);
 
-    if (!svcError && supabaseServices && supabaseServices.length === serviceIds.length) {
-      dbServices = supabaseServices;
-    } else {
-      // Fallback: try mock data lookup
-      const mockSalon = getMockSalon(salonId) || MOCK_SALONS.find(s => s.id === salonId);
-      if (mockSalon) {
-        const mockSvcList = mockSalon.services.filter(s => serviceIds.includes(s.id));
-        if (mockSvcList.length === serviceIds.length) {
-          dbServices = mockSvcList.map(s => ({
-            id: s.id,
-            price: s.price,
-            duration: s.duration,
-            salonId: salonId,
-          }));
-          isMockBooking = true;
-        }
-      }
-
-      if (!dbServices) {
-        return NextResponse.json(
-          { error: "Un ou plusieurs services sont invalides" },
-          { status: 400 }
-        );
-      }
+    if (svcError || !dbServices || dbServices.length !== serviceIds.length) {
+      return NextResponse.json(
+        { error: "Un ou plusieurs services sont invalides" },
+        { status: 400 }
+      );
     }
 
     const totalPrice = dbServices.reduce((sum: number, s: { price: number }) => sum + s.price, 0);
     const totalDuration = dbServices.reduce((sum: number, s: { duration: number }) => sum + s.duration, 0);
 
-    const [year, month, day] = date.split("-").map(Number);
-    const [hours, minutes] = time.split(":").map(Number);
-    const startTime = new Date(year, month - 1, day, hours, minutes);
     const endTime = new Date(startTime.getTime() + totalDuration * 60000);
 
-    // Mock booking: return simulated booking without touching Supabase
-    if (isMockBooking) {
-      const mockSalon = getMockSalon(salonId) || MOCK_SALONS.find(s => s.id === salonId);
-      const reference = generateBookingReference();
-      const mockBookingId = crypto.randomUUID();
-      
-      const firstService = dbServices[0];
-      const mockStaff = mockSalon?.staff?.[0];
-
-      return NextResponse.json({
-        booking: {
-          id: mockBookingId,
-          reference,
-          userId,
-          salonId,
-          status: "CONFIRMED",
-          source: "ONLINE",
-          totalPrice,
-          startTime: startTime.toISOString(),
-          endTime: endTime.toISOString(),
-          notes: notes || null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          salon: mockSalon ? { id: mockSalon.id, name: mockSalon.name, slug: mockSalon.slug, city: mockSalon.city, address: mockSalon.address } : null,
-          items: dbServices.map((svc, i) => ({
-            serviceId: svc.id,
-            staffId: mockStaff?.id || `mock-staff-${i}`,
-            startTime: new Date(startTime.getTime() + i * svc.duration * 60000).toISOString(),
-            endTime: new Date(startTime.getTime() + (i + 1) * svc.duration * 60000).toISOString(),
-            price: svc.price,
-            service: { id: svc.id, name: mockSalon?.services?.find(s => s.id === svc.id)?.name || "Service", price: svc.price, duration: svc.duration },
-            staff: mockStaff ? { id: mockStaff.id, displayName: mockStaff.displayName } : null,
-          })),
-        },
-      }, { status: 201 });
+    // Créneau dans les horaires d'ouverture du salon (heure locale Maroc)
+    const startMin = timeToMinutes(time);
+    const salonWindow = { startMin, endMin: startMin + totalDuration };
+    const salonHoursCheck = await isWithinSalonHours(salonId, date, salonWindow);
+    if (!salonHoursCheck.ok) {
+      return NextResponse.json({ error: salonHoursCheck.reason }, { status: 400 });
     }
 
     // Resolve staff IDs: for services without a staffId, find an eligible staff member
@@ -269,30 +234,47 @@ export async function POST(request: Request) {
       attempts++;
     }
 
-    // Check availability for each service/staff combo — prevent double booking
-    for (const svc of resolvedServices) {
-      const svcService = dbServices.find((s: { id: string }) => s.id === svc.serviceId);
-      const svcDuration = svcService?.duration || 30;
-      const svcStartTime = new Date(startTime.getTime() + resolvedServices.indexOf(svc) * svcDuration * 60000);
-      const svcEndTime = new Date(svcStartTime.getTime() + svcDuration * 60000);
+    // Calcul des items UNE seule fois (durées cumulées) — utilisés pour le
+    // pré-check de conflits ET l'insertion (mêmes intervalles, plus de divergence)
+    let itemCursor = startTime;
+    let itemCursorMin = startMin;
+    const items = resolvedServices.map((svc: { serviceId: string; staffId: string }) => {
+      const service = dbServices.find((s: { id: string }) => s.id === svc.serviceId)!;
+      const itemEnd = new Date(itemCursor.getTime() + service.duration * 60000);
+      const item = {
+        serviceId: svc.serviceId,
+        staffId: svc.staffId,
+        startTime: itemCursor.toISOString(),
+        endTime: itemEnd.toISOString(),
+        price: service.price,
+        startMin: itemCursorMin,
+        endMin: itemCursorMin + service.duration,
+      };
+      itemCursor = itemEnd;
+      itemCursorMin += service.duration;
+      return item;
+    });
 
-      // Fetch potential conflicts from BookingItem
-      const { data: potentialConflicts } = await supabaseAdmin
+    // Planning du professionnel + pré-check de conflits (UX : 409 propre avant l'insert)
+    for (const item of items) {
+      const staffCheck = await isWithinStaffSchedule(item.staffId, date, {
+        startMin: item.startMin,
+        endMin: item.endMin,
+      });
+      if (!staffCheck.ok) {
+        return NextResponse.json({ error: staffCheck.reason }, { status: 409 });
+      }
+
+      const { data: conflicts } = await supabaseAdmin
         .from("BookingItem")
-        .select("id, startTime, endTime, booking:Booking(status)")
-        .eq("staffId", svc.staffId)
-        .lt("startTime", svcEndTime.toISOString())
-        .gt("endTime", svcStartTime.toISOString());
+        .select("id")
+        .eq("staffId", item.staffId)
+        .eq("isCancelled", false)
+        .lt("startTime", item.endTime)
+        .gt("endTime", item.startTime)
+        .limit(1);
 
-      const hasConflict = potentialConflicts?.some(
-        (item: Record<string, unknown>) => {
-          const booking = item.booking as Record<string, unknown> | Record<string, unknown>[] | undefined;
-          const status = Array.isArray(booking) ? booking[0]?.status : booking?.status;
-          return ["PENDING", "CONFIRMED", "IN_PROGRESS"].includes(status as string);
-        }
-      );
-
-      if (hasConflict) {
+      if (conflicts && conflicts.length > 0) {
         return NextResponse.json(
           { error: "Créneau non disponible pour ce professionnel" },
           { status: 409 }
@@ -300,59 +282,46 @@ export async function POST(request: Request) {
       }
     }
 
-    // Create booking
-    let itemStartTime = startTime;
-    const items = resolvedServices.map((svc: { serviceId: string; staffId: string }) => {
-      const service = dbServices.find((s: { id: string }) => s.id === svc.serviceId)!;
-      const itemEndTime = new Date(itemStartTime.getTime() + service.duration * 60000);
-      const item = {
-        serviceId: svc.serviceId,
-        staffId: svc.staffId,
-        startTime: new Date(itemStartTime).toISOString(),
-        endTime: itemEndTime.toISOString(),
-        price: service.price,
-      };
-      itemStartTime = itemEndTime;
-      return item;
-    });
+    // Création atomique (Booking + items en une transaction).
+    // La contrainte d'exclusion bookingitem_no_overlap est la vraie garantie
+    // anti double-booking : en cas de course, l'insert échoue (23P01) → 409.
+    const { data: bookingId, error: createError } = await supabaseAdmin.rpc(
+      "create_booking_atomic",
+      {
+        p_reference: reference,
+        p_user_id: userId,
+        p_salon_id: salonId,
+        p_start: startTime.toISOString(),
+        p_end: endTime.toISOString(),
+        p_total_price: totalPrice,
+        p_notes: notes || null,
+        p_items: items.map(({ startMin: _s, endMin: _e, ...item }) => item),
+      }
+    );
 
-    const { data: booking, error: createError } = await supabaseAdmin
-      .from("Booking")
-      .insert({
-        reference,
-        userId,
-        salonId,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        totalPrice,
-        source: "ONLINE",
-        status: "CONFIRMED",
-        notes: notes || null,
-        updatedAt: new Date().toISOString(),
-      })
-      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address)")
-      .single();
-
-    if (createError || !booking) {
+    if (createError || !bookingId) {
+      if (createError?.code === "23P01") {
+        return NextResponse.json(
+          { error: "Le créneau vient d'être réservé par quelqu'un d'autre" },
+          { status: 409 }
+        );
+      }
       console.error("Booking creation Supabase error:", JSON.stringify(createError));
       return NextResponse.json(
-        { error: "Erreur lors de la creation", details: createError?.message },
+        { error: "Erreur lors de la creation" },
         { status: 500 }
       );
     }
 
-    // Create booking items
-    const bookingItems = items.map((item) => ({
-      ...item,
-      bookingId: booking.id,
-    }));
+    const { data: booking, error: fetchError } = await supabaseAdmin
+      .from("Booking")
+      .select("*, items:BookingItem(*, service:Service(*), staff:StaffMember(*)), salon:Salon(id, name, slug, city, address)")
+      .eq("id", bookingId)
+      .single();
 
-    const { error: itemsError } = await supabaseAdmin
-      .from("BookingItem")
-      .insert(bookingItems);
-
-    if (itemsError) {
-      console.error("Booking items creation error:", itemsError);
+    if (fetchError || !booking) {
+      console.error("Booking fetch after create error:", JSON.stringify(fetchError));
+      return NextResponse.json({ booking: { id: bookingId, reference } }, { status: 201 });
     }
 
     // Send confirmation email/SMS (non-blocking)
@@ -438,6 +407,12 @@ export async function DELETE(request: Request) {
         { status: 500 }
       );
     }
+
+    // Libérer les créneaux (contrainte d'exclusion ignorera ces items)
+    await supabaseAdmin
+      .from("BookingItem")
+      .update({ isCancelled: true })
+      .eq("bookingId", bookingId);
 
     // Send cancellation email (non-blocking)
     sendBookingCancellation(bookingId).catch(console.error);

@@ -72,20 +72,21 @@ export async function middleware(request: NextRequest) {
   }
 
   // Auth guard: require authentication for protected account routes and /pro
+  // Exception: /pro/inscription (onboarding) est public — le compte y est créé
   const isProtectedRoute = PROTECTED_ROUTES.some((route) =>
     pathname.startsWith(route),
   );
   const isProRoute = pathname.startsWith("/pro");
+  const isProOnboarding = pathname.startsWith("/pro/inscription");
 
-  if ((isProtectedRoute || isProRoute) && !user) {
+  if ((isProtectedRoute || (isProRoute && !isProOnboarding)) && !user) {
     const loginUrl = new URL("/connexion", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   // Role guard: /pro routes require PRO_OWNER, PRO_STAFF, or ADMIN
-  // Allow /pro/inscription (onboarding) for authenticated users of any role
-  const isProOnboarding = pathname.startsWith("/pro/inscription");
+  // Allow /pro/inscription (onboarding) for any role (un CONSUMER peut devenir pro)
   const userRole = user?.user_metadata?.role as string | undefined;
 
   if (isProRoute && !isProOnboarding && userRole === "CONSUMER") {

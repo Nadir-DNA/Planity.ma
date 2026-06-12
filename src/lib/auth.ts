@@ -83,3 +83,31 @@ export async function getUser(request?: Request): Promise<AuthUser | null> {
     return null;
   }
 }
+
+/**
+ * Résout le salon d'un compte pro :
+ * - PRO_OWNER / ADMIN → salon dont il est propriétaire
+ * - PRO_STAFF → salon de sa fiche StaffMember (lien StaffMember.userId)
+ */
+export async function getProSalonId(user: AuthUser): Promise<string | null> {
+  if (user.role === "PRO_OWNER" || user.role === "ADMIN") {
+    const { data: salon } = await supabaseAdmin
+      .from("Salon")
+      .select("id")
+      .eq("ownerId", user.id)
+      .maybeSingle();
+    if (salon) return salon.id;
+  }
+
+  if (user.role === "PRO_STAFF" || user.role === "PRO_OWNER") {
+    const { data: staff } = await supabaseAdmin
+      .from("StaffMember")
+      .select("salonId")
+      .eq("userId", user.id)
+      .eq("isActive", true)
+      .maybeSingle();
+    if (staff) return staff.salonId;
+  }
+
+  return null;
+}

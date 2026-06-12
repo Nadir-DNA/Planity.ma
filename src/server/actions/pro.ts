@@ -2,6 +2,9 @@
 
 import { supabaseAdmin, findByUnique, insertRow, findFirst, deleteRow, updateRow } from "@/lib/supabase-helpers";
 import { slugify } from "@/lib/utils";
+import { getUser } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { initSalonSubscription } from "@/server/services/dodo-payment.service";
 import * as bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -9,31 +12,49 @@ import { z } from "zod";
 // SCHEMA
 // ============================================================
 
-const openingHourSchema = z.object({
-  day: z.string(),
-  isOpen: z.boolean(),
-  openTime: z.string(),
-  closeTime: z.string(),
-});
+const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const openingHourSchema = z
+  .object({
+    day: z.string(),
+    isOpen: z.boolean(),
+    openTime: z.string().regex(TIME_REGEX, "Heure invalide (HH:MM)"),
+    closeTime: z.string().regex(TIME_REGEX, "Heure invalide (HH:MM)"),
+  })
+  .refine((h) => !h.isOpen || h.openTime < h.closeTime, {
+    message: "L'heure d'ouverture doit précéder l'heure de fermeture",
+  });
 
 const serviceDataSchema = z.object({
-  name: z.string(),
-  price: z.string(),
-  duration: z.string(),
+  name: z.string().min(1),
+  price: z.coerce.number().positive("Prix invalide").max(100000),
+  duration: z.coerce.number().int().positive("Durée invalide").max(600),
 });
 
 const staffDataSchema = z.object({
-  name: z.string(),
+  name: z.string().min(1),
   title: z.string(),
 });
 
+// Slugs valides (cf. SALON_CATEGORIES dans lib/constants) → stockés en DB en MAJUSCULES_UNDERSCORE
+const SALON_CATEGORY_SLUGS = new Set([
+  "coiffeur",
+  "barbier",
+  "institut-beaute",
+  "spa",
+  "ongles",
+  "maquillage",
+  "epilation",
+  "massage",
+]);
+
 const completeOnboardingSchema = z.object({
-  // User
-  firstName: z.string().min(2),
-  lastName: z.string().min(2),
-  email: z.string().email(),
+  // Compte (utilisé uniquement si aucune session active)
+  firstName: z.string().min(2).optional(),
+  lastName: z.string().min(2).optional(),
+  email: z.string().email().optional(),
   phone: z.string().optional(),
-  password: z.string().min(8),
+  password: z.string().min(8).optional(),
 
   // Salon
   salonName: z.string().min(2),
@@ -55,7 +76,7 @@ const completeOnboardingSchema = z.object({
   staff: z.array(staffDataSchema),
 });
 
-export type CompleteOnboardingInput = z.infer<typeof completeOnboardingSchema>;
+export type CompleteOnboardingInput = z.input<typeof completeOnboardingSchema>;
 
 // ============================================================
 // ACTION
@@ -69,30 +90,108 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
 
   const d = parsed.data;
 
-  // Check existing user — if exists, use it (registered via /inscription)
-  let existingUser = await findByUnique("User", "email", d.email);
+  if (!SALON_CATEGORY_SLUGS.has(d.salonCategory)) {
+    return { error: "Catégorie de salon invalide" };
+  }
+  const category = d.salonCategory.toUpperCase().replace(/-/g, "_");
+
+  // ── 1. Résoudre l'utilisateur : session active, sinon création de compte ──
+  const sessionUser = await getUser();
   let userId: string;
 
-  if (existingUser) {
-    // User already registered — use existing account
-    userId = (existingUser as Record<string, unknown>).id as string;
-    // Update role to PRO_OWNER if needed
-    if ((existingUser as Record<string, unknown>).role !== "PRO_OWNER") {
-      await updateRow("User", userId, { role: "PRO_OWNER" });
+  if (sessionUser) {
+    userId = sessionUser.id;
+
+    // Promote to PRO_OWNER (table + metadata Auth pour le middleware)
+    if (sessionUser.role !== "PRO_OWNER") {
+      await updateRow("User", userId, { role: "PRO_OWNER", updatedAt: new Date().toISOString() });
     }
+    await supabaseAdmin.auth.admin.updateUserById(userId, {
+      user_metadata: { role: "PRO_OWNER" },
+    });
   } else {
-    // No existing user — create one (standalone onboarding flow)
+    // Pas de session : le formulaire doit fournir les infos de compte
+    if (!d.email || !d.password || !d.firstName || !d.lastName) {
+      return { error: "Veuillez renseigner vos informations de compte (nom, email, mot de passe)" };
+    }
+
+    const normalizedEmail = d.email.toLowerCase().trim();
+
+    // Jamais de prise de contrôle silencieuse d'un compte existant
+    const existingUser = await findByUnique("User", "email", normalizedEmail);
+    if (existingUser) {
+      return {
+        error: "Un compte existe déjà avec cet email. Connectez-vous d'abord, puis reprenez l'inscription de votre salon.",
+      };
+    }
+
+    // Créer le compte dans Supabase Auth (source de vérité du login)
+    const { data: authData, error: signUpError } = await supabaseAdmin.auth.admin.createUser({
+      email: normalizedEmail,
+      password: d.password,
+      email_confirm: true,
+      user_metadata: {
+        firstName: d.firstName,
+        lastName: d.lastName,
+        role: "PRO_OWNER",
+        locale: "FR",
+        phone: d.phone || null,
+      },
+    });
+
+    if (signUpError || !authData.user) {
+      return { error: signUpError?.message || "Erreur lors de la création du compte" };
+    }
+
+    userId = authData.user.id;
+
     const passwordHash = await bcrypt.hash(d.password, 12);
-    const user = await insertRow("User", {
+    const { error: insertUserError } = await supabaseAdmin.from("User").insert({
+      id: userId,
       firstName: d.firstName,
       lastName: d.lastName,
       name: `${d.firstName} ${d.lastName}`,
-      email: d.email,
+      email: normalizedEmail,
       phone: d.phone || null,
       passwordHash,
       role: "PRO_OWNER",
+      locale: "FR",
+      isActive: true,
+      updatedAt: new Date().toISOString(),
     });
-    userId = (user as Record<string, unknown>).id as string;
+
+    if (insertUserError) {
+      // Rollback du compte Auth pour éviter les orphelins
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return { error: "Erreur technique lors de la création du compte" };
+    }
+
+    // Ouvrir la session (cookies) pour enchaîner sur le paiement et le dashboard
+    try {
+      const supabase = await createClient();
+      await supabase.auth.signInWithPassword({ email: normalizedEmail, password: d.password });
+    } catch {
+      // Si la pose de cookies échoue, l'utilisateur pourra se connecter manuellement
+    }
+  }
+
+  // ── 2. Idempotence : un seul salon par propriétaire ──
+  const existingSalon = await findFirst<{ id: string; slug: string; isActive: boolean }>("Salon", {
+    filters: { ownerId: userId },
+  });
+  if (existingSalon) {
+    if (existingSalon.isActive) {
+      return { error: "Vous avez déjà un salon actif sur Planity.ma" };
+    }
+    // Salon créé mais paiement non finalisé → relancer le checkout
+    const checkout = await initSalonSubscription(existingSalon.id);
+    return {
+      success: true as const,
+      userId,
+      salonId: existingSalon.id,
+      slug: existingSalon.slug,
+      checkoutUrl: checkout.success ? checkout.redirectUrl : undefined,
+    };
   }
 
   // Generate unique slug
@@ -110,11 +209,11 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     Lundi: 0, Mardi: 1, Mercredi: 2, Jeudi: 3, Vendredi: 4, Samedi: 5, Dimanche: 6,
   };
 
-  // Create salon
+  // Create salon — activé après paiement de l'abonnement (webhook Dodo)
   const salon = await insertRow("Salon", {
     name: d.salonName,
     slug,
-    category: d.salonCategory.toUpperCase().replace(/-/g, "_"),
+    category,
     address: d.salonAddress,
     city: d.salonCity,
     postalCode: d.salonPostalCode || null,
@@ -122,7 +221,8 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     email: d.salonEmail || null,
     description: d.salonDescription || null,
     ownerId: userId,
-    isActive: false, // requires admin approval
+    isActive: false,
+    subscriptionStatus: "PENDING",
   });
 
   const salonId = (salon as Record<string, unknown>).id as string;
@@ -184,17 +284,12 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
   // Create services
   for (let i = 0; i < d.services.length; i++) {
     const svc = d.services[i];
-    if (!svc.name || !svc.price || !svc.duration) continue;
-
-    const price = parseFloat(svc.price);
-    const duration = parseInt(svc.duration);
-    if (isNaN(price) || isNaN(duration) || price <= 0 || duration <= 0) continue;
 
     const service = await insertRow("Service", {
       salonId,
       name: svc.name,
-      price,
-      duration,
+      price: svc.price,
+      duration: svc.duration,
       isActive: true,
       isOnlineBookable: true,
       order: i,
@@ -211,7 +306,17 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     }
   }
 
-  return { success: true, userId, salonId, slug };
+  // ── 3. Abonnement Dodo : le salon sera activé par le webhook payment.success ──
+  const checkout = await initSalonSubscription(salonId);
+
+  return {
+    success: true as const,
+    userId,
+    salonId,
+    slug,
+    // Si la création du checkout échoue, le dashboard proposera de relancer le paiement
+    checkoutUrl: checkout.success ? checkout.redirectUrl : undefined,
+  };
 }
 
 // ============================================================

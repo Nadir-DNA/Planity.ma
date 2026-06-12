@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getUser } from "@/lib/auth";
+import { getUser, getProSalonId } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,16 +15,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Accès réservé aux professionnels" }, { status: 403 });
     }
 
-    // Find salon owned by user
-    const { data: salon, error: salonError } = await supabaseAdmin
-      .from("Salon")
-      .select("id")
-      .eq("ownerId", user.id)
-      .maybeSingle();
-
-    if (salonError || !salon) {
+    // Salon du pro (owner OU membre d'équipe)
+    const proSalonId = await getProSalonId(user);
+    if (!proSalonId) {
       return NextResponse.json({ error: "Salon non trouvé" }, { status: 404 });
     }
+    const salon = { id: proSalonId };
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
