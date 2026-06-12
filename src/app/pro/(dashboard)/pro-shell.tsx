@@ -123,13 +123,16 @@ export default function ProShell({
 
         {/* Bottom */}
         <div className="p-4 border-t border-[rgba(198,198,198,0.2)]">
-          <Link
-            href="/api/auth/signout"
+          <button
+            onClick={async () => {
+              await fetch("/api/v1/auth/logout", { method: "POST" }).catch(() => {});
+              window.location.href = "/";
+            }}
             className="flex items-center space-x-3 px-3 py-2 text-sm text-gray-500 hover:text-black w-full rounded-md hover:bg-[#f9f9f9] transition-colors"
           >
             <LogOut className="h-5 w-5" />
             <span>Déconnexion</span>
-          </Link>
+          </button>
         </div>
       </aside>
 

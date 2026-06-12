@@ -52,67 +52,23 @@ export default function ProClientsPage() {
   const [noteText, setNoteText] = useState("");
   const [noteClient, setNoteClient] = useState<string>("");
 
-  // Mock data for now (will be replaced with API calls)
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
-        // TODO: Fetch from API
-        const mockClients: Client[] = [
-          {
-            id: "1",
-            name: "Fatima Zahra",
-            email: "fatima@email.com",
-            phone: "+212 661 123 456",
-            totalBookings: 12,
-            totalSpent: 2400,
-            lastBooking: "2024-03-15",
-            averageRating: 4.8,
-            notes: "Préfère toujours Sara comme coiffeuse",
-          },
-          {
-            id: "2",
-            name: "Ahmed Benali",
-            email: "ahmed@email.com",
-            phone: "+212 662 789 012",
-            totalBookings: 8,
-            totalSpent: 960,
-            lastBooking: "2024-03-10",
-            averageRating: 4.5,
-          },
-          {
-            id: "3",
-            name: "Khadija Mansouri",
-            email: "khadija@email.com",
-            phone: "+212 663 345 678",
-            totalBookings: 24,
-            totalSpent: 5200,
-            lastBooking: "2024-03-18",
-            averageRating: 5.0,
-            notes: "Cliente VIP - carte fidélité niveau or",
-          },
-          {
-            id: "4",
-            name: "Youssef El Amrani",
-            email: "youssef@email.com",
-            phone: "+212 664 901 234",
-            totalBookings: 3,
-            totalSpent: 270,
-            lastBooking: "2024-02-20",
-          },
-          {
-            id: "5",
-            name: "Sara Idrissi",
-            email: "sara.idrissi@email.com",
-            phone: "+212 665 567 890",
-            totalBookings: 18,
-            totalSpent: 3600,
-            lastBooking: "2024-03-19",
-            averageRating: 4.7,
-          },
-        ];
-        setClients(mockClients);
-      } catch (err) {
+        const res = await fetch("/api/v1/pro/clients");
+        if (!res.ok) {
+          toast.error("Erreur de chargement des clients");
+          return;
+        }
+        const data = await res.json();
+        setClients(
+          (data.clients || []).map((c: Client & { lastBooking?: string }) => ({
+            ...c,
+            lastBooking: c.lastBooking ? c.lastBooking.split("T")[0] : undefined,
+          }))
+        );
+      } catch {
         toast.error("Erreur de chargement");
       } finally {
         setLoading(false);

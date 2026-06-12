@@ -6,6 +6,9 @@ import { StatsSection } from "@/components/marketing/stats-section";
 import { CitiesSection } from "@/components/marketing/cities-section";
 import { ProCTA } from "@/components/marketing/pro-cta";
 
+// Salons en vedette lus en DB → re-générer la page régulièrement
+export const revalidate = 300;
+
 export default function HomePage() {
   return (
     <>

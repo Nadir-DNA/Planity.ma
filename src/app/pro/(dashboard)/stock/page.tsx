@@ -64,71 +64,11 @@ export default function ProStockPage() {
   });
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        setLoading(true);
-        // Mock data
-        const mockProducts: Product[] = [
-          {
-            id: "p1",
-            name: "Shampooing professionnel",
-            sku: "SH-001",
-            price: 150,
-            cost: 80,
-            stock: 20,
-            minStock: 5,
-            category: "Shampooing",
-            supplier: "Fournisseur Pro",
-          },
-          {
-            id: "p2",
-            name: "Masque capillaire",
-            sku: "MC-002",
-            price: 200,
-            cost: 120,
-            stock: 15,
-            minStock: 5,
-            category: "Masque",
-            supplier: "Fournisseur Pro",
-          },
-          {
-            id: "p3",
-            name: "Huile d'argan",
-            sku: "HA-003",
-            price: 120,
-            cost: 60,
-            stock: 3,
-            minStock: 5,
-            category: "Huile",
-            supplier: "Bio Maroc",
-          },
-          {
-            id: "p4",
-            name: "Laque fixante",
-            sku: "LF-004",
-            price: 80,
-            cost: 40,
-            stock: 25,
-            minStock: 10,
-            category: "Coiffant",
-            supplier: "Fournisseur Pro",
-          },
-        ];
-        setProducts(mockProducts);
-
-        const mockMovements: StockMovement[] = [
-          { id: "m1", productId: "p1", productName: "Shampooing professionnel", type: "IN", quantity: 10, date: "2024-03-15", note: "Réception commande" },
-          { id: "m2", productId: "p3", productName: "Huile d'argan", type: "OUT", quantity: 2, date: "2024-03-18", note: "Vente caisse" },
-          { id: "m3", productId: "p2", productName: "Masque capillaire", type: "IN", quantity: 5, date: "2024-03-10", note: "Réception commande" },
-        ];
-        setMovements(mockMovements);
-      } catch (err) {
-        toast.error("Erreur de chargement");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
+    // TODO: gestion de stock non persistée en base (table Product à créer).
+    // En attendant : état vide honnête plutôt que des produits fictifs.
+    setProducts([]);
+    setMovements([]);
+    setLoading(false);
   }, []);
 
   function openCreate() {

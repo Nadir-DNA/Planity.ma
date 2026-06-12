@@ -78,18 +78,21 @@ export default function ProCaissePage() {
           setServices(salonData.services || []);
         }
 
-        // Mock data for now
-        setProducts([
-          { id: "p1", name: "Shampooing professionnel", price: 150, stock: 20 },
-          { id: "p2", name: "Masque capillaire", price: 200, stock: 15 },
-          { id: "p3", name: "Huile d'argan", price: 120, stock: 10 },
-        ]);
+        // Pas de gestion de stock en base pour l'instant → pas de faux produits
+        setProducts([]);
 
-        setClients([
-          { id: "c1", name: "Fatima Zahra", phone: "+212 661 123 456" },
-          { id: "c2", name: "Ahmed Benali", phone: "+212 662 789 012" },
-          { id: "c3", name: "Khadija Mansouri", phone: "+212 663 345 678" },
-        ]);
+        // Vrais clients du salon (dérivés des réservations)
+        const clientsRes = await fetch("/api/v1/pro/clients");
+        if (clientsRes.ok) {
+          const clientsData = await clientsRes.json();
+          setClients(
+            (clientsData.clients || []).map((c: { id: string; name: string; phone: string | null }) => ({
+              id: c.id,
+              name: c.name,
+              phone: c.phone || "",
+            }))
+          );
+        }
       } catch (err) {
         toast.error("Erreur de chargement");
       } finally {

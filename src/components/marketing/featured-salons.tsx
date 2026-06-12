@@ -1,26 +1,53 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Star, MapPin } from "lucide-react";
-import { MOCK_SALONS } from "@/lib/mock-data";
+import { supabaseAdmin } from "@/lib/supabase";
 
-const featuredSalons = MOCK_SALONS.slice(0, 6).map((s) => {
-  const bookableServices = s.services.filter(sv => sv.isOnlineBookable);
-  const prices = bookableServices.map(sv => sv.price);
-  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-  return {
-    id: s.id,
-    name: s.name,
-    slug: s.slug,
-    category: s.category.charAt(0) + s.category.slice(1).toLowerCase().replace(/_/g, " "),
-    city: s.city,
-    rating: s.averageRating,
-    reviewCount: s.reviewCount,
-    priceRange: minPrice > 0 ? `À partir de ${minPrice} DH` : "Sur devis",
-    coverImage: s.coverImage,
-  };
-});
+interface FeaturedSalon {
+  id: string;
+  name: string;
+  slug: string;
+  category: string;
+  city: string;
+  rating: number;
+  reviewCount: number;
+  priceRange: string;
+  coverImage: string | null;
+}
 
-export function FeaturedSalons() {
+async function getFeaturedSalons(): Promise<FeaturedSalon[]> {
+  const { data: salons } = await supabaseAdmin
+    .from("Salon")
+    .select("id, name, slug, category, city, averageRating, reviewCount, coverImage, services:Service(price, isOnlineBookable, isActive)")
+    .eq("isActive", true)
+    .order("reviewCount", { ascending: false })
+    .limit(6);
+
+  return (salons || []).map((s) => {
+    const prices = (s.services || [])
+      .filter((sv: { isOnlineBookable: boolean; isActive: boolean }) => sv.isOnlineBookable && sv.isActive)
+      .map((sv: { price: number }) => sv.price);
+    const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+    return {
+      id: s.id,
+      name: s.name,
+      slug: s.slug,
+      category: s.category.charAt(0) + s.category.slice(1).toLowerCase().replace(/_/g, " "),
+      city: s.city,
+      rating: s.averageRating,
+      reviewCount: s.reviewCount,
+      priceRange: minPrice > 0 ? `À partir de ${minPrice} DH` : "Sur devis",
+      coverImage: s.coverImage,
+    };
+  });
+}
+
+export async function FeaturedSalons() {
+  const featuredSalons = await getFeaturedSalons();
+
+  // Pas de salons actifs → pas de section (ni de faux salons)
+  if (featuredSalons.length === 0) return null;
+
   return (
     <section className="py-20 sm:py-28 bg-surface">
       <div className="mx-auto max-w-7xl px-5 lg:px-8">
