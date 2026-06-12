@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getMockSalon } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
@@ -53,30 +52,13 @@ export async function GET(
         return NextResponse.json({ salon: safeSalon });
       }
     } catch {
-      // Supabase not available, fall through to mock
+      // Erreur Supabase inattendue → 404 ci-dessous
     }
 
-    // Fallback: mock data (searches by slug OR id)
-    const mockSalon = getMockSalon(slug);
-
-    if (!mockSalon) {
-      return NextResponse.json(
-        { error: "Salon introuvable" },
-        { status: 404 }
-      );
-    }
-
-    // Strip PII from mock response
-    const { email: _email, phone: _phone, ...safeMockSalon } = mockSalon;
-    return NextResponse.json({
-      salon: {
-        ...safeMockSalon,
-        _count: {
-          reviews: mockSalon.reviewCount,
-          bookings: Math.floor(mockSalon.reviewCount * 1.5),
-        },
-      },
-    });
+    return NextResponse.json(
+      { error: "Salon introuvable" },
+      { status: 404 }
+    );
   } catch (error) {
     console.error("Salon fetch error:", error);
     return NextResponse.json(

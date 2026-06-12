@@ -22,30 +22,8 @@ export default function FavoritesPage() {
   const [favorites, setFavorites] = useState<FavoriteSalon[]>([]);
 
   useEffect(() => {
-    // TODO: Fetch from API
-    const mockFavorites: FavoriteSalon[] = [
-      {
-        id: "1",
-        name: "Salon Elegance",
-        slug: "salon-elegance-casablanca",
-        category: "Coiffeur",
-        city: "Casablanca",
-        address: "123 Bd Mohammed V",
-        rating: 4.8,
-        reviewCount: 124,
-      },
-      {
-        id: "2",
-        name: "Spa Zenith",
-        slug: "spa-zenith-marrakech",
-        category: "Spa & Hammam",
-        city: "Marrakech",
-        address: "Gueliz, Av. Mohammed VI",
-        rating: 4.7,
-        reviewCount: 201,
-      },
-    ];
-    setFavorites(mockFavorites);
+    // TODO: brancher sur une vraie API favoris (table Favorite à créer)
+    setFavorites([]);
   }, []);
 
   function removeFavorite(id: string) {

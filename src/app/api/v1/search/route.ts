@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { MOCK_SALONS, searchMockSalons } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
@@ -25,50 +24,43 @@ export async function GET(request: Request) {
     const isVerified = searchParams.get("isVerified") === "true";
     const isOpen = searchParams.get("isOpen") === "true";
 
-    // Try Supabase first
-    try {
-      let queryBuilder = supabaseAdmin
+    let queryBuilder = supabaseAdmin
         .from("Salon")
         .select("id, name, slug, category, description, city, address, coverImage, isActive, isVerified, averageRating, reviewCount, latitude, longitude, services:Service(id, name, slug, price, duration, isActive), openingHours:SalonSchedule(id, dayOfWeek, openTime, closeTime, isClosed), photos:SalonPhoto(*)", { count: "exact" })
         .eq("isActive", true);
 
-      if (isVerified) queryBuilder = queryBuilder.eq("isVerified", true);
-      if (city) queryBuilder = queryBuilder.ilike("city", `%${city}%`);
-      if (category) {
-        const categories = category.split(",").map(c => c.toUpperCase().replace(/-/g, "_").trim()).filter(Boolean);
-        if (categories.length === 1) queryBuilder = queryBuilder.eq("category", categories[0]);
-        else if (categories.length > 1) queryBuilder = queryBuilder.in("category", categories);
-      }
-      if (query) queryBuilder = queryBuilder.or(`name.ilike.%${query}%,description.ilike.%${query}%,city.ilike.%${query}%`);
-      if (minRating > 0) queryBuilder = queryBuilder.gte("averageRating", minRating);
+    if (isVerified) queryBuilder = queryBuilder.eq("isVerified", true);
+    if (city) queryBuilder = queryBuilder.ilike("city", `%${city}%`);
+    if (category) {
+      const categories = category.split(",").map(c => c.toUpperCase().replace(/-/g, "_").trim()).filter(Boolean);
+      if (categories.length === 1) queryBuilder = queryBuilder.eq("category", categories[0]);
+      else if (categories.length > 1) queryBuilder = queryBuilder.in("category", categories);
+    }
+    if (query) queryBuilder = queryBuilder.or(`name.ilike.%${query}%,description.ilike.%${query}%,city.ilike.%${query}%`);
+    if (minRating > 0) queryBuilder = queryBuilder.gte("averageRating", minRating);
 
-      const from = (page - 1) * limit;
-      const to = from + limit - 1;
-      queryBuilder = queryBuilder.range(from, to);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    queryBuilder = queryBuilder.range(from, to);
 
-      if (sortBy === "rating") queryBuilder = queryBuilder.order("averageRating", { ascending: false });
-      else if (sortBy === "name") queryBuilder = queryBuilder.order("name", { ascending: true });
-      else queryBuilder = queryBuilder.order("reviewCount", { ascending: false });
+    if (sortBy === "rating") queryBuilder = queryBuilder.order("averageRating", { ascending: false });
+    else if (sortBy === "name") queryBuilder = queryBuilder.order("name", { ascending: true });
+    else queryBuilder = queryBuilder.order("reviewCount", { ascending: false });
 
-      const { data: salons, count: total, error } = await queryBuilder;
+    const { data: salons, count: total, error } = await queryBuilder;
 
-      if (!error && salons && (salons.length > 0 || (total && total > 0))) {
-        const safeSalons = salons.map(stripSalonPII);
-        return NextResponse.json({
-          salons: safeSalons,
-          total: total || salons.length,
-          page,
-          totalPages: Math.ceil((total || salons.length) / limit),
-        });
-      }
-    } catch {
-      // DB not available, fall through to mock
+    if (error) {
+      console.error("Search Supabase error:", error.message);
+      return NextResponse.json({ error: "Erreur lors de la recherche" }, { status: 500 });
     }
 
-    // Fallback: mock data (CRIT-02: strip PII)
-    const result = searchMockSalons({ query, city, category, minRating, minPrice, maxPrice, isVerified, isOpen, sortBy, page, limit });
-    const safeSalons = ((result.salons || result) as unknown as Record<string, unknown>[]).map(stripSalonPII);
-    return NextResponse.json({ salons: safeSalons, total: result.total, page: result.page, totalPages: result.totalPages });
+    const safeSalons = (salons || []).map(stripSalonPII);
+    return NextResponse.json({
+      salons: safeSalons,
+      total: total || safeSalons.length,
+      page,
+      totalPages: Math.ceil((total || safeSalons.length) / limit),
+    });
   } catch (error) {
     console.error("Search error:", error);
     return NextResponse.json({ error: "Erreur lors de la recherche" }, { status: 500 });

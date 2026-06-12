@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getMockSalon } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
@@ -56,25 +55,13 @@ export async function GET(
         return NextResponse.json({ staff });
       }
     } catch {
-      // Supabase not available, fall through to mock
+      // Erreur Supabase inattendue → 404 ci-dessous
     }
 
-    // Fallback to mock data (searches by slug OR id)
-    const mockSalon = getMockSalon(slug);
-    if (!mockSalon) {
-      return NextResponse.json(
-        { error: "Salon non trouvé" },
-        { status: 404 }
-      );
-    }
-
-    const staff = mockSalon.staff
-      .filter(s => s.isActive)
-      .map(({ id, displayName, title, color, avatar }) => ({
-        id, displayName, title, color, avatar,
-      }));
-
-    return NextResponse.json({ staff });
+    return NextResponse.json(
+      { error: "Salon non trouvé" },
+      { status: 404 }
+    );
   } catch (error) {
     console.error("Staff fetch error:", error);
     return NextResponse.json(
