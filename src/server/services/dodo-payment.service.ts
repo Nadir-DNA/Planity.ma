@@ -10,7 +10,11 @@ import { supabaseAdmin, findById, findByUnique, insertRow, updateRow } from "@/l
  * Authentication: Bearer token via API key
  */
 
-const DODO_API_BASE = "https://live.dodopayments.com";
+// DODO_API_MODE=test → environnement de test Dodo (clé + produits + webhook test requis)
+const DODO_API_BASE =
+  process.env.DODO_API_MODE === "test"
+    ? "https://test.dodopayments.com"
+    : "https://live.dodopayments.com";
 const DODO_API_KEY = process.env.DODO_PAYMENT_API_KEY || "";
 const DODO_WEBHOOK_KEY = process.env.DODO_PAYMENTS_WEBHOOK_KEY || "";
 const DODO_BOOKING_PRODUCT_ID = process.env.DODO_BOOKING_PRODUCT_ID || "pdt_0Nep6iKfD7V6aEdluDCOE";
@@ -239,8 +243,14 @@ export async function initSalonSubscription(salonId: string): Promise<PaymentRes
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      console.error("Dodo subscription checkout error:", err);
+      const err = await response.json().catch(() => ({} as Record<string, unknown>));
+      console.error("Dodo subscription checkout error:", response.status, err);
+      if ((err as { code?: string }).code === "MERCHANT_NOT_LIVE") {
+        return {
+          success: false,
+          error: "Le compte de paiement Planity est en cours de validation chez notre prestataire. Réessayez bientôt — votre salon est enregistré.",
+        };
+      }
       return { success: false, error: "Échec de la création du paiement d'abonnement" };
     }
 
