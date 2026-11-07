@@ -80,6 +80,12 @@ export async function PATCH(
       );
     }
 
+    // Libérer les créneaux (contrainte d'exclusion ignorera ces items), comme DELETE /api/v1/bookings
+    await supabaseAdmin
+      .from("BookingItem")
+      .update({ isCancelled: true })
+      .eq("bookingId", id);
+
     // Send cancellation notification (non-blocking)
     sendBookingCancellation(id).catch(console.error);
 

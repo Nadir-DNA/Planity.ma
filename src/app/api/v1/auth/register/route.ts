@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, createAuthClient } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
     }
 
     // ── 4. Auto-connexion (créer une session) ──────────────
-    const { data: sessionData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+    const { data: sessionData, error: signInError } = await createAuthClient().auth.signInWithPassword({
       email: normalizedEmail,
       password: data.password,
     });

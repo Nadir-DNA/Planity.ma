@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, createAuthClient } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 
 // ── Helpers cookies ──────────────────────────────────────
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     const normalizedEmail = email.toLowerCase().trim();
 
     // ── 1. Authentifier via Supabase Auth ──────────────────
-    const { data: authData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+    const { data: authData, error: signInError } = await createAuthClient().auth.signInWithPassword({
       email: normalizedEmail,
       password,
     });
