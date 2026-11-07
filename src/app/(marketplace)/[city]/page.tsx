@@ -24,6 +24,9 @@ export async function generateMetadata({
   };
 }
 
+// Ville ou catégorie inconnue → 404 (pas de pages vides indexées)
+export const dynamicParams = false;
+
 export async function generateStaticParams() {
   return MOROCCAN_CITIES.map((city) => ({
     city: city.toLowerCase().replace(/\s+/g, "-").normalize("NFD").replace(/[\u0300-\u036f]/g, ""),

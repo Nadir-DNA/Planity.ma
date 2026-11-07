@@ -30,6 +30,9 @@ export async function generateMetadata({
   };
 }
 
+// Ville ou catégorie inconnue → 404 (pas de pages vides indexées)
+export const dynamicParams = false;
+
 export async function generateStaticParams() {
   const params: { city: string; category: string }[] = [];
   for (const city of MOROCCAN_CITIES) {

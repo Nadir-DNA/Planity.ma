@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     
     // Validate pagination with Zod
     const { page, limit } = paginationSchema.parse({
-      page: searchParams.get("page"),
+      page: searchParams.get("page") ?? undefined,
       limit: searchParams.get("limit") || "10",
     });
 
