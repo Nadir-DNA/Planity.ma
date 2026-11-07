@@ -18,10 +18,6 @@ const DODO_API_BASE =
 const DODO_API_KEY = process.env.DODO_PAYMENT_API_KEY || "";
 const DODO_WEBHOOK_KEY = process.env.DODO_PAYMENTS_WEBHOOK_KEY || "";
 const DODO_BOOKING_PRODUCT_ID = process.env.DODO_BOOKING_PRODUCT_ID || "pdt_0Nep6iKfD7V6aEdluDCOE";
-// Produit d'abonnement récurrent Dodo pour l'activation d'un salon
-const DODO_SALON_SUBSCRIPTION_PRODUCT_ID = process.env.DODO_SALON_SUBSCRIPTION_PRODUCT_ID || "";
-
-const APP_URL = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 // Approximate MAD-to-USD rate for Dodo Payments (product prices are in USD)
 // Dodo handles adaptive currency display via billing_currency field
@@ -174,106 +170,6 @@ export async function initDodoPayment(params: CreatePaymentParams): Promise<Paym
 }
 
 /**
- * Init salon activation subscription (abonnement récurrent Dodo).
- * Le salon n'est activé que par le webhook (payment.succeeded / subscription.active).
- */
-export async function initSalonSubscription(salonId: string): Promise<PaymentResult> {
-  if (!DODO_SALON_SUBSCRIPTION_PRODUCT_ID) {
-    console.error("DODO_SALON_SUBSCRIPTION_PRODUCT_ID manquant dans l'environnement");
-    return { success: false, error: "Paiement d'activation non configuré" };
-  }
-
-  const { data: salon, error: salonError } = await supabaseAdmin
-    .from("Salon")
-    .select("id, name, isActive, ownerId, owner:User!ownerId(id, email, name)")
-    .eq("id", salonId)
-    .single();
-
-  if (salonError || !salon) {
-    return { success: false, error: "Salon introuvable" };
-  }
-  if (salon.isActive) {
-    return { success: false, error: "Ce salon est déjà actif" };
-  }
-
-  const owner = (Array.isArray(salon.owner) ? salon.owner[0] : salon.owner) as
-    | { id: string; email: string | null; name: string | null }
-    | undefined;
-
-  // Réutiliser un paiement PENDING existant plutôt que d'en empiler
-  const { data: pendingPayment } = await supabaseAdmin
-    .from("Payment")
-    .select("id")
-    .eq("salonId", salonId)
-    .eq("type", "SALON_SUBSCRIPTION")
-    .eq("status", "PENDING")
-    .maybeSingle();
-
-  const payment = pendingPayment
-    ? pendingPayment
-    : await insertRow<{ id: string }>("Payment", {
-        salonId,
-        userId: salon.ownerId,
-        amount: 0, // prix porté par le produit Dodo
-        method: "CARD",
-        type: "SALON_SUBSCRIPTION",
-        status: "PENDING",
-      });
-
-  try {
-    const response = await fetch(`${DODO_API_BASE}/checkouts`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${DODO_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        product_cart: [{ product_id: DODO_SALON_SUBSCRIPTION_PRODUCT_ID, quantity: 1 }],
-        metadata: {
-          payment_type: "salon_subscription",
-          salon_id: salonId,
-          payment_id: payment.id,
-        },
-        redirect_url: `${APP_URL}/paiement/succes?type=activation`,
-        cancel_url: `${APP_URL}/pro?paiement=annule`,
-        ...(owner?.email
-          ? { customer: { email: owner.email, name: owner.name || undefined } }
-          : {}),
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({} as Record<string, unknown>));
-      console.error("Dodo subscription checkout error:", response.status, err);
-      if ((err as { code?: string }).code === "MERCHANT_NOT_LIVE") {
-        return {
-          success: false,
-          error: "Le compte de paiement Planity est en cours de validation chez notre prestataire. Réessayez bientôt — votre salon est enregistré.",
-        };
-      }
-      return { success: false, error: "Échec de la création du paiement d'abonnement" };
-    }
-
-    const session: DodoCheckoutSession = await response.json();
-
-    await updateRow("Payment", payment.id, {
-      stripePaymentIntentId: session.session_id,
-      updatedAt: new Date().toISOString(),
-    });
-
-    return {
-      success: true,
-      paymentId: payment.id,
-      redirectUrl: session.checkout_url || undefined,
-      dodoPaymentId: session.session_id,
-    };
-  } catch (error) {
-    console.error("Dodo subscription request failed:", error);
-    return { success: false, error: "Échec de la création du paiement d'abonnement" };
-  }
-}
-
-/**
  * Handle Dodo Payment webhook
  */
 export async function handleDodoWebhook(payload: {
@@ -293,14 +189,6 @@ export async function handleDodoWebhook(payload: {
       case "payment.refunded":
       case "refund.succeeded":
         return await handlePaymentRefunded(data);
-      case "subscription.active":
-      case "subscription.renewed":
-        return await handleSubscriptionActive(data);
-      case "subscription.on_hold":
-      case "subscription.failed":
-      case "subscription.cancelled":
-      case "subscription.expired":
-        return await handleSubscriptionEnded(data, event_type);
       default:
         console.log(`Unhandled Dodo webhook event: ${event_type}`);
         return { success: true };
@@ -309,22 +197,6 @@ export async function handleDodoWebhook(payload: {
     console.error("Dodo webhook processing error:", error);
     return { success: false, error: "Erreur de traitement du webhook" };
   }
-}
-
-/** Active le salon lié à un paiement d'abonnement (id de salon lu en DB, pas depuis le payload). */
-async function activateSalonForPayment(payment: Record<string, unknown>, data: Record<string, any>) {
-  const salonId = payment.salonId as string | null;
-  if (!salonId) return;
-
-  await supabaseAdmin
-    .from("Salon")
-    .update({
-      isActive: true,
-      subscriptionStatus: "ACTIVE",
-      dodoSubscriptionId: data.subscription_id || null,
-      updatedAt: new Date().toISOString(),
-    })
-    .eq("id", salonId);
 }
 
 async function handlePaymentSuccess(data: Record<string, any>): Promise<{ success: boolean; error?: string }> {
@@ -355,78 +227,11 @@ async function handlePaymentSuccess(data: Record<string, any>): Promise<{ succes
   });
 
   // Lier les effets au Payment vérifié en DB — jamais aux ids du payload
-  if (payment.type === "SALON_SUBSCRIPTION") {
-    await activateSalonForPayment(payment, data);
-  } else if (payment.bookingId) {
+  if (payment.bookingId) {
     await updateRow("Booking", payment.bookingId as string, {
       status: "CONFIRMED",
       depositPaid: true,
     });
-  }
-
-  return { success: true };
-}
-
-async function handleSubscriptionActive(data: Record<string, any>): Promise<{ success: boolean; error?: string }> {
-  const salonId = data.metadata?.salon_id;
-  const subscriptionId = data.subscription_id || data.id;
-
-  // Résolution : metadata (posée par nous au checkout, signature vérifiée) puis subscriptionId connu
-  let targetSalonId: string | null = salonId || null;
-  if (!targetSalonId && subscriptionId) {
-    const { data: salon } = await supabaseAdmin
-      .from("Salon")
-      .select("id")
-      .eq("dodoSubscriptionId", subscriptionId)
-      .maybeSingle();
-    targetSalonId = salon?.id || null;
-  }
-
-  if (!targetSalonId) {
-    console.warn("subscription.active sans salon résolu:", subscriptionId);
-    return { success: true };
-  }
-
-  await supabaseAdmin
-    .from("Salon")
-    .update({
-      isActive: true,
-      subscriptionStatus: "ACTIVE",
-      dodoSubscriptionId: subscriptionId || null,
-      updatedAt: new Date().toISOString(),
-    })
-    .eq("id", targetSalonId);
-
-  return { success: true };
-}
-
-async function handleSubscriptionEnded(data: Record<string, any>, eventType: string): Promise<{ success: boolean; error?: string }> {
-  const subscriptionId = data.subscription_id || data.id;
-  const salonIdFromMeta = data.metadata?.salon_id;
-
-  const statusMap: Record<string, string> = {
-    "subscription.cancelled": "CANCELLED",
-    "subscription.expired": "EXPIRED",
-    "subscription.failed": "FAILED",
-    "subscription.on_hold": "FAILED",
-  };
-
-  let query = supabaseAdmin
-    .from("Salon")
-    .update({
-      isActive: false,
-      subscriptionStatus: statusMap[eventType] || "CANCELLED",
-      updatedAt: new Date().toISOString(),
-    });
-
-  if (subscriptionId) {
-    const { error } = await query.eq("dodoSubscriptionId", subscriptionId);
-    if (error) console.error("Salon deactivation error:", error);
-  } else if (salonIdFromMeta) {
-    const { error } = await query.eq("id", salonIdFromMeta);
-    if (error) console.error("Salon deactivation error:", error);
-  } else {
-    console.warn(`${eventType} sans identifiant de salon exploitable`);
   }
 
   return { success: true };

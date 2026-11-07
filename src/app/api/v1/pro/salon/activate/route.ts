@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
-import { initSalonSubscription } from "@/server/services/dodo-payment.service";
+import { initSalonSubscription } from "@/server/services/stripe-subscription.service";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/v1/pro/salon/activate — (re)lancer le checkout d'abonnement Dodo
+// POST /api/v1/pro/salon/activate — (re)lancer le checkout d'abonnement Stripe
 export async function POST(request: Request) {
   try {
     const user = await getUser(request);

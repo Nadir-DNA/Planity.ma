@@ -7,7 +7,7 @@ import { toast } from "react-hot-toast";
 
 /**
  * Bannière affichée sur le dashboard pro tant que le salon n'est pas activé
- * (abonnement Dodo non payé). Propose de (re)lancer le checkout.
+ * (abonnement Stripe non payé). Propose de (re)lancer le checkout.
  */
 export function SalonActivationBanner() {
   const [inactive, setInactive] = useState(false);

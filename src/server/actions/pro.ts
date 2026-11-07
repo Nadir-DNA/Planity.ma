@@ -4,7 +4,7 @@ import { supabaseAdmin, findByUnique, insertRow, findFirst, deleteRow, updateRow
 import { slugify } from "@/lib/utils";
 import { getUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { initSalonSubscription } from "@/server/services/dodo-payment.service";
+import { initSalonSubscription } from "@/server/services/stripe-subscription.service";
 import * as bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -209,7 +209,7 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     Lundi: 0, Mardi: 1, Mercredi: 2, Jeudi: 3, Vendredi: 4, Samedi: 5, Dimanche: 6,
   };
 
-  // Create salon — activé après paiement de l'abonnement (webhook Dodo)
+  // Create salon — activé après paiement de l'abonnement (webhook Stripe)
   const salon = await insertRow("Salon", {
     name: d.salonName,
     slug,
@@ -306,7 +306,7 @@ export async function completeProOnboarding(data: CompleteOnboardingInput) {
     }
   }
 
-  // ── 3. Abonnement Dodo : le salon sera activé par le webhook payment.success ──
+  // ── 3. Abonnement Stripe : le salon sera activé par le webhook checkout.session.completed ──
   const checkout = await initSalonSubscription(salonId);
 
   return {

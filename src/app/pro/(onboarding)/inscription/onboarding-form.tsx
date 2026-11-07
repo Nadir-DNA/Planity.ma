@@ -193,7 +193,7 @@ export default function OnboardingForm({ currentUser }: { currentUser: CurrentUs
           return;
         }
 
-        // Activation par abonnement : redirection vers le checkout Dodo
+        // Activation par abonnement : redirection vers le checkout Stripe
         if (result.checkoutUrl) {
           window.location.href = result.checkoutUrl;
           return;
